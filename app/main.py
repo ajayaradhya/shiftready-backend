@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from app.services.firestore import FirestoreService
 from app.services.gemini import GeminiProcessor
 from app.services.pricing import PricingEngine
-from app.utils.gcs import generate_upload_url
+from app.utils.gcs import GCSUtils
 
 # Setup logging to see exactly where the time goes
 logging.basicConfig(level=logging.INFO)
@@ -27,14 +27,18 @@ REGION = os.getenv("GCP_REGION")
 # Initializing these outside the routes prevents expensive re-authentication
 firestore_svc = None
 gemini_processor = None
+gcs_utils = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Handles startup and shutdown of global resources."""
-    global firestore_svc, gemini_processor
+    """Initializes all GCP clients once on startup."""
+    global firestore_svc, gemini_processor, gcs_utils
     logger.info("Initializing Global GCP Services...")
+    
     firestore_svc = FirestoreService()
     gemini_processor = GeminiProcessor(project_id=PROJECT_ID)
+    gcs_utils = GCSUtils() # Pre-auth and handshake happen here
+    
     yield
     logger.info("Shutting down resources...")
 
@@ -93,14 +97,13 @@ def health_check():
 
 @app.post("/sales/init", response_model=SaleInitResponse)
 async def initialize_sale(payload: SaleInitRequest):
-    """Step 1: Get a signed URL and create Firestore record."""
     start_time = time.time()
     blob_name = f"uploads/{payload.user_id}/{payload.filename}"
     gcs_uri = f"gs://{BUCKET_NAME}/{blob_name}"
 
     try:
-        # 1. Generate Signed URL
-        upload_url = generate_upload_url(BUCKET_NAME, blob_name)
+        # Use the global singleton instead of instantiating a new one
+        upload_url = gcs_utils.generate_upload_url(BUCKET_NAME, blob_name)
         logger.info(f"Signed URL generated in {time.time() - start_time:.2f}s")
         
         # 2. Initialize Firestore record
