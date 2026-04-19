@@ -1,47 +1,60 @@
 import os
-
+import json
+from typing import List
 from dotenv import load_dotenv
-import vertexai
 from vertexai.generative_models import GenerativeModel, Part, GenerationConfig
 from app.models.inventory import RoomBundle
-from typing import List
-import json
 
 load_dotenv()
 
-REGION = os.getenv("GCP_REGION")
-
 class GeminiProcessor:
-    def __init__(self, project_id: str, location: str = REGION):
-        vertexai.init(project=project_id, location=location)
+    def __init__(self, project_id: str):
+        # Using the flash model for high-speed, long-context video processing
         self.model = GenerativeModel("gemini-1.5-flash")
 
     def process_walkthrough(self, gcs_uri: str) -> List[RoomBundle]:
-        # Reference the video in GCS
+        """
+        Processes a video walkthrough from GCS and returns a validated list of RoomBundles.
+        Uses constrained output to ensure the response matches the Pydantic model.
+        """
         video_part = Part.from_uri(uri=gcs_uri, mime_type="video/mp4")
         
-        # System Instruction for structured extraction
+        # This prompt defines the 'Persona' and 'Logic' for the extraction
         prompt = """
-        Analyze this home walkthrough video for a move-out sale. 
-        1. Identify high-value items (Electronics, Furniture, Appliances).
-        2. Group them into logical Room Bundles.
-        3. Estimate the original retail price in AUD based on Sydney market standards.
-        4. Detect brands and condition (Like-New, Good, Visible Wear).
+        You are a professional home inventory specialist in Sydney, Australia. 
+        Analyze this move-out walkthrough video and identify all high-value sellable items.
         
-        Return ONLY a JSON array of bundles.
+        Rules:
+        1. Group items into logical 'Room Bundles' based on their location or category.
+        2. Identify brands (e.g., Dyson, Samsung, Koala, IKEA) wherever possible.
+        3. Assign a condition based on visual inspection: 'Like-New', 'Good', or 'Visible Wear'.
+        4. Estimate the original retail price in AUD based on current Sydney market values.
+        5. Provide a confidence score for each identification.
         """
 
-        # Ensure Gemini returns strictly valid JSON
-        config = GenerationConfig(
-            response_mime_type="application/json",
-            candidate_count=1
-        )
+        # Generate the JSON schema directly from the Pydantic model
+        # Gemini expects a dictionary representation of the OpenAPI/JSON schema
+        response_schema = {
+            "type": "array",
+            "items": RoomBundle.model_json_schema()
+        }
 
+        # The 'Production-First' magic: The model is forced to follow this schema
         response = self.model.generate_content(
             [video_part, prompt],
-            generation_config=config
+            generation_config=GenerationConfig(
+                response_mime_type="application/json",
+                response_schema=response_schema,
+                temperature=0.1,  # Low temperature for deterministic output
+            )
         )
 
-        # Parse the raw string into our Pydantic models
-        raw_data = json.loads(response.text)
-        return [RoomBundle(**b) for b in raw_data]
+        try:
+            # Because of constrained output, we can trust the JSON structure
+            raw_data = json.loads(response.text)
+            return [RoomBundle(**b) for b in raw_data]
+        except Exception as e:
+            # In production, you'd log this to Cloud Logging
+            print(f"Error parsing Gemini response: {e}")
+            print(f"Raw Response: {response.text}")
+            raise e
