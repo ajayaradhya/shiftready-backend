@@ -1,38 +1,37 @@
+# app/utils/gcs.py
 import os
 import datetime
-import google.auth
 from google.cloud import storage
+import google.auth
 from google.auth import impersonated_credentials
-from dotenv import load_dotenv
-
-# Load local .env if present
-load_dotenv()
 
 class GCSUtils:
+    _client = None  # Class-level cache (Singleton)
+
     def __init__(self):
-        # Fetch from env with fallbacks
-        self.project_id = os.getenv("GCP_PROJECT_ID")
-        self.service_account = os.getenv("GCP_SERVICE_ACCOUNT")
+        if GCSUtils._client is None:
+            self._init_client()
+
+    def _init_client(self):
+        source_creds, project = google.auth.default()
+        target_sa = os.getenv("GCP_SERVICE_ACCOUNT")
         
-        self.credentials, _ = google.auth.default()
-        
-        # Use impersonation if service account is defined
-        if self.service_account:
-            self.credentials = impersonated_credentials.Credentials(
-                source_credentials=self.credentials,
-                target_principal=self.service_account,
+        # Only impersonate if we are local AND have a target SA
+        if not os.getenv("K_SERVICE") and target_sa:
+            print("Configuring Impersonated Credentials for local dev...")
+            creds = impersonated_credentials.Credentials(
+                source_credentials=source_creds,
+                target_principal=target_sa,
                 target_scopes=["https://www.googleapis.com/auth/cloud-platform"],
             )
-        
-        self.storage_client = storage.Client(
-            project=self.project_id, 
-            credentials=self.credentials
-        )
+            GCSUtils._client = storage.Client(credentials=creds, project=project)
+        else:
+            # On Cloud Run, use the built-in identity
+            GCSUtils._client = storage.Client()
 
     def generate_upload_url(self, bucket_name: str, blob_name: str):
-        bucket = self.storage_client.bucket(bucket_name)
+        bucket = GCSUtils._client.bucket(bucket_name)
         blob = bucket.blob(blob_name)
-
         return blob.generate_signed_url(
             version="v4",
             expiration=datetime.timedelta(minutes=15),
