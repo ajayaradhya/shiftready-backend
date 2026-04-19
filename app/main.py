@@ -63,32 +63,35 @@ class SaleInitResponse(BaseModel):
 # --- Background Task ---
 
 async def run_ai_pipeline(event_id: str, gcs_uri: str):
-    """Background worker to process video and update Firestore."""
     try:
-        logger.info(f"AI Pipeline started for event: {event_id}")
-        
-        # 1. Extraction via LLM
         bundles = gemini_processor.process_walkthrough(gcs_uri)
 
-        # 2. Pricing & Storage
         for bundle in bundles:
-            bundle_id = firestore_svc.add_bundle(event_id, bundle.bundle_name, 0)
-            total_bundle_price = 0
+            # 1. Filter out low-confidence noise (< 50%)
+            valid_items = [item for item in bundle.items if item.confidence >= 0.5]
             
-            for item in bundle.items:
+            if not valid_items:
+                continue # Skip empty bundles
+
+            bundle_id = firestore_svc.add_bundle(event_id, bundle.bundle_name, 0)
+            total_price = 0
+
+            for item in valid_items:
+                # Calculate initial price using our engine
+                # Note: We now pass the age based on the current year (2026)
+                age = 2026 - item.estimated_year_of_purchase
                 item.listing_price = PricingEngine.calculate_listing_price(
-                    original_price=item.original_price, 
+                    orig_price=item.original_price,
                     category="default",
                     condition=item.condition,
-                    age_years=1.0
+                    age_years=max(age, 1) # Minimum 1 year for depreciation logic
                 )
-                total_bundle_price += item.listing_price
+                total_price += item.listing_price
                 firestore_svc.add_item_to_bundle(event_id, bundle_id, item.dict())
-            
-            firestore_svc.update_bundle_price(event_id, bundle_id, total_bundle_price)
+
+            firestore_svc.update_bundle_price(event_id, bundle_id, total_price)
 
         firestore_svc.update_sale_status(event_id, "ready_for_review")
-        logger.info(f"AI Pipeline completed successfully for event: {event_id}")
 
     except Exception as e:
         logger.error(f"Pipeline Error for {event_id}: {str(e)}")
@@ -144,3 +147,25 @@ async def get_status(event_id: str):
         raise HTTPException(status_code=404, detail="Sale Event not found")
     
     return {"status": event.get("status", "unknown")}
+
+@app.get("/sales/{event_id}/summary")
+async def get_sale_summary(event_id: str):
+    """Returns the full hierarchy of bundles and items for the Review UI."""
+    summary = firestore_svc.get_full_event_summary(event_id)
+    if not summary:
+        raise HTTPException(status_code=404, detail="Sale not found")
+    return summary
+
+@app.patch("/sales/{event_id}/bundles/{bundle_id}/items/{item_id}")
+async def edit_item(event_id: str, bundle_id: str, item_id: str, updates: dict):
+    """Allows user to override any field Gemini provided."""
+    # When an item is edited, we might need to recalculate bundle totals
+    # For now, we'll just update the item document
+    firestore_svc.update_item_data(event_id, bundle_id, item_id, updates)
+    return {"status": "updated"}
+
+@app.post("/sales/{event_id}/publish")
+async def publish_sale(event_id: str):
+    """Finalizes the sale and moves status to 'live'."""
+    firestore_svc.update_sale_status(event_id, "live")
+    return {"status": "live", "message": "Your ShiftReady sale is now public!"}

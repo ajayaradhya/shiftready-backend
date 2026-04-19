@@ -1,13 +1,17 @@
 from pydantic import BaseModel, Field
+from typing import List, Optional
 
 class InventoryItem(BaseModel):
+    id: Optional[str] = None 
     name: str
     brand: str
-    original_price: float = Field(description="Estimated original retail price in AUD")
-    listing_price: float = Field(description="Suggested listing price in AUD")
     condition: str
+    original_price: float
+    estimated_year_of_purchase: int
     confidence: float
+    listing_price: Optional[float] = None
 
 class RoomBundle(BaseModel):
-    bundle_name: str = Field(description="Name of the room bundle")
-    items: list[InventoryItem] = Field(description="List of inventory items in the bundle")
+    id: Optional[str] = None
+    bundle_name: str
+    items: List[InventoryItem]

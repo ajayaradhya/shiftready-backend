@@ -15,9 +15,10 @@ class GeminiProcessor:
     # Helper to remove $defs and $ref for Vertex AI compatibility
     @staticmethod
     def get_gemini_compatible_schema(model):
+        # Use 'mode="validation"' to get the schema used for input
         schema = model.model_json_schema()
         
-        # Vertex AI hates $defs. We need to manually inline them if they exist.
+        # 1. Inline definitions (as we did before)
         if "$defs" in schema:
             definitions = schema.pop("$defs")
             def inline_refs(obj):
@@ -30,8 +31,25 @@ class GeminiProcessor:
                     return [inline_refs(i) for i in obj]
                 return obj
             schema = inline_refs(schema)
-        
-        return schema
+
+        # 2. STRIP NULL TYPES (Fix for the 400 error)
+        def clean_nulls(obj):
+            if isinstance(obj, dict):
+                # If we see an 'anyOf' with a null type, force it to just the non-null type
+                if "anyOf" in obj:
+                    types = [t for t in obj["anyOf"] if t.get("type") != "null"]
+                    if len(types) == 1:
+                        return clean_nulls(types[0])
+                
+                # Explicitly remove fields Gemini shouldn't touch
+                # We don't want the AI generating IDs or the final listing price
+                forbidden = ["id", "listing_price"]
+                return {k: clean_nulls(v) for k, v in obj.items() if k not in forbidden}
+            elif isinstance(obj, list):
+                return [clean_nulls(i) for i in obj]
+            return obj
+
+        return clean_nulls(schema)
 
     def process_walkthrough(self, gcs_uri: str) -> List[RoomBundle]:
         """

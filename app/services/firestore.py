@@ -55,3 +55,37 @@ class FirestoreService:
                .collection("bundles").document(bundle_id).update({
                    "suggestedPrice": total_price
                })
+        
+    def get_full_event_summary(self, event_id: str):
+        event_ref = self.db.collection("saleEvents").document(event_id)
+        event_doc = event_ref.get()
+        
+        if not event_doc.exists:
+            return None
+            
+        data = event_doc.to_dict()
+        data["id"] = event_id
+        data["bundles"] = []
+
+        # Fetch sub-collections
+        bundles = event_ref.collection("bundles").stream()
+        for b in bundles:
+            b_data = b.to_dict()
+            b_data["id"] = b.id
+            b_data["items"] = []
+            
+            items = b.reference.collection("items").stream()
+            for i in items:
+                i_data = i.to_dict()
+                i_data["id"] = i.id
+                b_data["items"].append(i_data)
+                
+            data["bundles"].append(b_data)
+            
+        return data
+
+    def update_item_data(self, event_id, bundle_id, item_id, updates):
+        item_ref = self.db.collection("saleEvents").document(event_id) \
+                          .collection("bundles").document(bundle_id) \
+                          .collection("items").document(item_id)
+        item_ref.update(updates)

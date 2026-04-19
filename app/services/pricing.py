@@ -16,11 +16,11 @@ class PricingEngine:
     }
 
     @classmethod
-    def calculate_listing_price(cls, original_price: float, category: str, condition: str, age_years: float = 1.0) -> float:
+    def calculate_listing_price(cls, orig_price: float, category: str, condition: str, age_years: float = 1.0) -> float:
         rate = cls.DEPRECIATION_RATES.get(category.lower(), cls.DEPRECIATION_RATES["default"])
         multiplier = cls.CONDITION_MULT.get(condition, 0.50)
         
         # Compound Depreciation Formula: P = P_orig * (1 - rate)^t * multiplier
-        suggested_price = original_price * ((1 - rate) ** age_years) * multiplier
+        suggested_price = orig_price * ((1 - rate) ** age_years) * multiplier
         
         return round(suggested_price / 5) * 5 
