@@ -1,11 +1,18 @@
+import os
+
+from dotenv import load_dotenv
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part, GenerationConfig
 from app.models.inventory import RoomBundle
 from typing import List
 import json
 
+load_dotenv()
+
+REGION = os.getenv("GCP_REGION")
+
 class GeminiProcessor:
-    def __init__(self, project_id: str, location: str = "australia-southeast1"):
+    def __init__(self, project_id: str, location: str = REGION):
         vertexai.init(project=project_id, location=location)
         self.model = GenerativeModel("gemini-1.5-flash")
 

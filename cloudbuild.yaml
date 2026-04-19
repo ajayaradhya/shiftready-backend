@@ -1,9 +1,9 @@
 steps:
-  # 1. Build the container image using Artifact Registry
+  # 1. Build the container image
   - name: 'gcr.io/cloud-builders/docker'
     args: [
       'build', 
-      '-t', 'australia-southeast1-docker.pkg.dev/$PROJECT_ID/shiftready-repo/shiftready-api:$COMMIT_SHA', 
+      '-t', '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_SERVICE_NAME}:$COMMIT_SHA', 
       '.'
     ]
 
@@ -11,7 +11,7 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: [
       'push', 
-      'australia-southeast1-docker.pkg.dev/$PROJECT_ID/shiftready-repo/shiftready-api:$COMMIT_SHA'
+      '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_SERVICE_NAME}:$COMMIT_SHA'
     ]
 
   # 3. Deploy to Cloud Run
@@ -20,19 +20,27 @@ steps:
     args:
       - 'run'
       - 'deploy'
-      - 'shiftready-api'
+      - '${_SERVICE_NAME}'
       - '--image'
-      - 'australia-southeast1-docker.pkg.dev/$PROJECT_ID/shiftready-repo/shiftready-api:$COMMIT_SHA'
+      - '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_SERVICE_NAME}:$COMMIT_SHA'
       - '--region'
-      - 'australia-southeast1'
+      - '${_LOCATION}'
       - '--service-account'
       - 'shiftready-backend@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--set-env-vars'
+      - 'GCP_PROJECT_ID=$PROJECT_ID,GCP_SERVICE_ACCOUNT=shiftready-backend@$PROJECT_ID.iam.gserviceaccount.com,GCP_UPLOAD_BUCKET=${_UPLOAD_BUCKET}'
       - '--allow-unauthenticated'
 
-# This allows Cloud Build to track which images were produced by the build
 images:
-  - 'australia-southeast1-docker.pkg.dev/$PROJECT_ID/shiftready-repo/shiftready-api:$COMMIT_SHA'
+  - '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_SERVICE_NAME}:$COMMIT_SHA'
 
 options:
   logging: CLOUD_LOGGING_ONLY
-  dynamic_substitutions: true # Allows us to use variables like $PROJECT_ID
+  dynamic_substitutions: true
+
+# These are the default values if nothing is provided in the trigger
+substitutions:
+  _LOCATION: australia-southeast1
+  _REPO_NAME: shiftready-repo
+  _SERVICE_NAME: shiftready-api
+  _UPLOAD_BUCKET: shiftready-uploads-bucket

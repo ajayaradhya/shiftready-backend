@@ -4,7 +4,7 @@ import os
 class FirestoreService:
     def __init__(self):
         # Automatically detects PROJECT_ID from environment in Cloud Run
-        project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "shiftready-493812")
+        project_id = os.getenv("GCP_PROJECT_ID")
         self.db = firestore.Client(project=project_id)
 
     def create_sale_event(self, user_id: str, video_url: str) -> str:

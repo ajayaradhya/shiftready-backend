@@ -1,4 +1,5 @@
 import os
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from typing import Optional
@@ -11,9 +12,12 @@ from app.utils.gcs import generate_upload_url
 
 app = FastAPI(title="ShiftReady API", version="1.0.0")
 
+load_dotenv()
+
 # Configuration
-PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "shiftready-493812")
-BUCKET_NAME = os.getenv("UPLOAD_BUCKET", "shiftready-uploads-bucket")
+PROJECT_ID = os.getenv("GCP_PROJECT_ID")
+BUCKET_NAME = os.getenv("GCP_UPLOAD_BUCKET")
+REGION = os.getenv("GCP_REGION")
 
 # --- Request/Response Schemas ---
 
@@ -74,7 +78,7 @@ async def run_ai_pipeline(event_id: str, gcs_uri: str):
 
 @app.get("/")
 def health_check():
-    return {"status": "online", "region": "australia-southeast1"}
+    return {"status": "online", "region": REGION}
 
 @app.post("/sales/init", response_model=SaleInitResponse)
 async def initialize_sale(payload: SaleInitRequest):

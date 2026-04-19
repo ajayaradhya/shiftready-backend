@@ -4,3 +4,4 @@ google-cloud-storage
 google-cloud-firestore
 google-cloud-aiplatform
 python-multipart
+python-dotenv
