@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel
+import vertexai
 
 # Internal Imports
 from app.services.firestore import FirestoreService
@@ -35,9 +36,13 @@ async def lifespan(app: FastAPI):
     global firestore_svc, gemini_processor, gcs_utils
     logger.info("Initializing Global GCP Services...")
     
+    # 1. Initialize Vertex AI for the Sydney Region
+    vertexai.init(project=PROJECT_ID, location=REGION)
+    
+    # 2. Initialize our custom services
     firestore_svc = FirestoreService()
     gemini_processor = GeminiProcessor(project_id=PROJECT_ID)
-    gcs_utils = GCSUtils() # Pre-auth and handshake happen here
+    gcs_utils = GCSUtils()
     
     yield
     logger.info("Shutting down resources...")
@@ -62,7 +67,7 @@ async def run_ai_pipeline(event_id: str, gcs_uri: str):
     try:
         logger.info(f"AI Pipeline started for event: {event_id}")
         
-        # 1. Extraction via Gemini 1.5 Flash
+        # 1. Extraction via LLM
         bundles = gemini_processor.process_walkthrough(gcs_uri)
 
         # 2. Pricing & Storage
@@ -72,10 +77,10 @@ async def run_ai_pipeline(event_id: str, gcs_uri: str):
             
             for item in bundle.items:
                 item.listing_price = PricingEngine.calculate_listing_price(
-                    orig_price=item.original_price_estimate,
+                    original_price=item.original_price, 
                     category="default",
                     condition=item.condition,
-                    years=1.0
+                    age_years=1.0
                 )
                 total_bundle_price += item.listing_price
                 firestore_svc.add_item_to_bundle(event_id, bundle_id, item.dict())

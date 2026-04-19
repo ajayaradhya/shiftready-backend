@@ -10,7 +10,28 @@ load_dotenv()
 class GeminiProcessor:
     def __init__(self, project_id: str):
         # Using the flash model for high-speed, long-context video processing
-        self.model = GenerativeModel("gemini-1.5-flash")
+        self.model = GenerativeModel("gemini-2.5-flash")
+
+    # Helper to remove $defs and $ref for Vertex AI compatibility
+    @staticmethod
+    def get_gemini_compatible_schema(model):
+        schema = model.model_json_schema()
+        
+        # Vertex AI hates $defs. We need to manually inline them if they exist.
+        if "$defs" in schema:
+            definitions = schema.pop("$defs")
+            def inline_refs(obj):
+                if isinstance(obj, dict):
+                    if "$ref" in obj:
+                        ref_name = obj["$ref"].split("/")[-1]
+                        return inline_refs(definitions[ref_name])
+                    return {k: inline_refs(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [inline_refs(i) for i in obj]
+                return obj
+            schema = inline_refs(schema)
+        
+        return schema
 
     def process_walkthrough(self, gcs_uri: str) -> List[RoomBundle]:
         """
@@ -32,11 +53,12 @@ class GeminiProcessor:
         5. Provide a confidence score for each identification.
         """
 
-        # Generate the JSON schema directly from the Pydantic model
-        # Gemini expects a dictionary representation of the OpenAPI/JSON schema
+        # Generate the inlined schema
+        bundle_schema = self.get_gemini_compatible_schema(RoomBundle)
+
         response_schema = {
             "type": "array",
-            "items": RoomBundle.model_json_schema()
+            "items": bundle_schema
         }
 
         # The 'Production-First' magic: The model is forced to follow this schema
@@ -45,7 +67,7 @@ class GeminiProcessor:
             generation_config=GenerationConfig(
                 response_mime_type="application/json",
                 response_schema=response_schema,
-                temperature=0.1,  # Low temperature for deterministic output
+                temperature=0.1,
             )
         )
 
