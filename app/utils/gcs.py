@@ -1,45 +1,43 @@
-# app/utils/gcs.py
 import os
 import datetime
 from google.cloud import storage
-import google.auth
 from google.auth import impersonated_credentials
+import google.auth
 
 class GCSUtils:
-    _client = None  # Class-level cache (Singleton)
-
     def __init__(self):
-        if GCSUtils._client is None:
-            self._init_client()
-
-    def _init_client(self):
-        source_creds, project = google.auth.default()
-        target_sa = os.getenv("GCP_SERVICE_ACCOUNT")
+        # 1. Fetch from ENV (Configured in .env or Cloud Run trigger)
+        self.project_id = os.getenv("GCP_PROJECT_ID")
+        self.service_account = os.getenv("GCP_SERVICE_ACCOUNT")
         
-        # Only impersonate if we are local AND have a target SA
-        if not os.getenv("K_SERVICE") and target_sa:
-            print("Configuring Impersonated Credentials for local dev...")
-            creds = impersonated_credentials.Credentials(
-                source_credentials=source_creds,
-                target_principal=target_sa,
-                target_scopes=["https://www.googleapis.com/auth/cloud-platform"],
-            )
-            GCSUtils._client = storage.Client(credentials=creds, project=project)
-        else:
-            # On Cloud Run, use the built-in identity
-            GCSUtils._client = storage.Client()
+        # 2. Get the base credentials (ADC)
+        source_creds, _ = google.auth.default()
+        
+        # 3. Create impersonated credentials (The magic piece)
+        # This acts as the 'Signer' by calling the IAM SignBlob API
+        self.impersonated_creds = impersonated_credentials.Credentials(
+            source_credentials=source_creds,
+            target_principal=self.service_account,
+            target_scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        )
+        
+        self.storage_client = storage.Client(
+            project=self.project_id, 
+            credentials=self.impersonated_creds
+        )
 
     def generate_upload_url(self, bucket_name: str, blob_name: str):
-        bucket = GCSUtils._client.bucket(bucket_name)
+        bucket = self.storage_client.bucket(bucket_name)
         blob = bucket.blob(blob_name)
+
         return blob.generate_signed_url(
             version="v4",
             expiration=datetime.timedelta(minutes=15),
             method="PUT",
-            content_type="video/mp4"
+            content_type="video/mp4",
+            # Crucial: This tells the library to use the IAM service, not a local key
+            service_account_email=self.service_account
         )
 
-# Helper function to be called by main.py
 def generate_upload_url(bucket_name: str, blob_name: str):
-    utils = GCSUtils()
-    return utils.generate_upload_url(bucket_name, blob_name)
+    return GCSUtils().generate_upload_url(bucket_name, blob_name)
