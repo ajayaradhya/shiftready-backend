@@ -5,6 +5,8 @@ import logging
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # Internal Imports
@@ -131,10 +133,6 @@ async def run_pricing_pipeline(event_id: str):
 
 # --- Endpoints ---
 
-@app.get("/")
-def health_check():
-    return {"status": "online", "region": REGION}
-
 @app.post("/sales/init", response_model=SaleInitResponse)
 async def initialize_sale(payload: SaleInitRequest):
     start_time = time.time()
@@ -179,14 +177,6 @@ async def get_status(event_id: str):
         raise HTTPException(status_code=404, detail="Sale Event not found")
     
     return {"status": event.get("status", "unknown")}
-
-@app.get("/sales/{event_id}/summary")
-async def get_sale_summary(event_id: str):
-    """Returns the full hierarchy of bundles and items for the Review UI."""
-    summary = firestore_svc.get_full_event_summary(event_id)
-    if not summary:
-        raise HTTPException(status_code=404, detail="Sale not found")
-    return summary
 
 @app.patch("/sales/{event_id}/bundles/{bundle_id}/items/{item_id}")
 async def edit_item(event_id: str, bundle_id: str, item_id: str, updates: dict):
@@ -242,3 +232,48 @@ async def trigger_price_estimation(event_id: str, background_tasks: BackgroundTa
     firestore_svc.update_sale_status(event_id, "pricing_in_progress")
     background_tasks.add_task(run_pricing_pipeline, event_id)
     return {"message": "AI is analyzing Sydney market prices for your items..."}
+
+@app.get("/sales/{event_id}/summary")
+async def get_sale_summary(event_id: str):
+    """Returns the full hierarchy with a transformed Signed URL and price fallbacks."""
+    summary = firestore_svc.get_full_event_summary(event_id)
+    if not summary:
+        raise HTTPException(status_code=404, detail="Sale not found")
+    
+    # 1. Transform the gs:// URI into a temporary HTTPS Signed URL for the web player
+    gcs_uri = summary.get("videoUrl")
+    if gcs_uri and gcs_uri.startswith("gs://"):
+        try:
+            stripped_uri = gcs_uri.replace("gs://", "")
+            bucket_name, blob_name = stripped_uri.split("/", 1)
+            
+            # This uses the impersonated credentials you configured in GCSUtils
+            summary["videoUrl"] = gcs_utils.generate_download_url(bucket_name, blob_name)
+            logger.info(f"✅ Signed URL Generated for event {event_id}")
+        except Exception as e:
+            logger.error(f"❌ Failed to generate signed URL: {str(e)}")
+            summary["videoUrl"] = "" # Fallback to prevent UI crash
+
+    # 2. Ensure price fallbacks are handled so UI fields aren't empty
+    for bundle in summary.get('bundles', []):
+        for item in bundle.get('items', []):
+            # If actual is null, the UI should show predicted
+            if item.get("actual_original_price") is None:
+                item["actual_original_price"] = item.get("predicted_original_price")
+            if item.get("actual_listing_price") is None:
+                item["actual_listing_price"] = item.get("predicted_listing_price")
+
+    return summary
+
+
+# Static Files (For the Review UI)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+static_path = os.path.join(BASE_DIR, "static")
+
+app.mount("/static", StaticFiles(directory=static_path), name="static")
+
+@app.get("/", response_class=HTMLResponse)
+async def read_index():
+    index_path = os.path.join(static_path, "index.html")
+    with open(index_path, encoding="utf-8") as f:
+        return f.read()

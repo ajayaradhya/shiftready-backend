@@ -36,3 +36,15 @@ class GCSUtils:
             content_type="video/mp4",
             service_account_email=self.target_sa
         )
+    
+    def generate_download_url(self, bucket_name: str, blob_name: str, expires_in: int = 3600):
+        """Generates a temporary HTTPS signed URL for viewing a private video."""
+        bucket = self.storage_client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+
+        return blob.generate_signed_url(
+            version="v4",
+            expiration=datetime.timedelta(seconds=expires_in),
+            method="GET",
+            service_account_email=self.target_sa
+        )

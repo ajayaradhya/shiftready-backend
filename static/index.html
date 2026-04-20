@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ShiftReady | Dev Control Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans min-h-screen">
+
+    <div class="max-w-7xl mx-auto p-6">
+        <header class="flex justify-between items-center mb-8 border-b border-gray-800 pb-6">
+            <div>
+                <h1 class="text-3xl font-extrabold text-blue-500 tracking-tight">ShiftReady <span class="text-white font-light text-xl italic">DevEngine</span></h1>
+                <p class="text-gray-400 text-sm">Relocation Proof & Pricing Dashboard | Sydney 2026</p>
+            </div>
+            <div class="flex items-center gap-4">
+                <input id="activeEventId" type="text" placeholder="Event ID" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button onclick="loadSummary()" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-sm transition">Load Existing</button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            <div class="lg:col-span-4 space-y-6">
+                <section class="bg-gray-800 p-6 rounded-2xl border border-gray-700">
+                    <h2 class="text-lg font-bold mb-4 flex items-center gap-2">
+                        <span class="bg-blue-500 w-2 h-6 rounded-full"></span> 1. Ingestion
+                    </h2>
+                    <input type="file" id="videoFile" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600 cursor-pointer"/>
+                    <button id="uploadBtn" onclick="handleFullUpload()" class="w-full mt-4 bg-blue-600 hover:bg-blue-500 py-2 rounded-lg font-bold transition shadow-lg">Start Extraction</button>
+                    
+                    <div id="statusIndicator" class="mt-4 hidden p-3 rounded-lg text-sm font-mono bg-black/30 border border-gray-700 text-blue-300 italic text-center">
+                        Awaiting input...
+                    </div>
+                </section>
+
+                <section class="bg-gray-800 p-4 rounded-2xl border border-gray-700 sticky top-6">
+                    <h2 class="text-lg font-bold mb-4">Visual Proof</h2>
+                    <video id="mainVideo" controls class="w-full rounded-xl bg-black aspect-video border border-gray-600 shadow-2xl">
+                        <source id="videoSource" src="" type="video/mp4">
+                    </video>
+                    <div id="playbackInfo" class="mt-2 text-[10px] text-gray-500 text-center uppercase tracking-widest">No video context</div>
+                </section>
+            </div>
+
+            <div class="lg:col-span-8">
+                <section class="bg-gray-800 p-6 rounded-2xl border border-gray-700 min-h-[600px]">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-lg font-bold">2. Inventory & Price Correction</h2>
+                        <div class="flex gap-2">
+                            <button onclick="triggerEstimate()" class="bg-purple-600 hover:bg-purple-500 px-3 py-1 text-xs rounded font-bold uppercase tracking-widest transition">Recalculate</button>
+                            <button onclick="openPublishModal()" class="bg-green-600 hover:bg-green-500 px-3 py-1 text-xs rounded font-bold uppercase tracking-widest transition">Publish</button>
+                        </div>
+                    </div>
+
+                    <div id="inventoryContainer" class="space-y-4">
+                        <div class="text-center py-20 text-gray-600 border-2 border-dashed border-gray-700 rounded-xl">
+                            <p>Enter an ID or upload a video to populate inventory.</p>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <div id="publishModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-gray-800 border border-gray-700 p-8 rounded-3xl max-w-sm w-full shadow-2xl">
+            <h3 class="text-2xl font-bold mb-2">Finalize Sale</h3>
+            <p class="text-gray-400 text-sm mb-6">Relocation Deadline (Sydney Move-Out):</p>
+            <input type="date" id="moveOutDate" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 mb-6 text-white">
+            <div class="flex gap-4">
+                <button onclick="closePublishModal()" class="flex-1 text-gray-400 hover:text-white transition">Cancel</button>
+                <button onclick="confirmPublish()" class="flex-2 bg-green-600 hover:bg-green-500 px-6 py-3 rounded-xl font-bold transition">Confirm Sale</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = ""; 
+
+        // --- CORE LIFECYCLE ---
+
+        async function handleFullUpload() {
+            const fileInput = document.getElementById('videoFile');
+            if (!fileInput.files.length) return alert("Please select a walkthrough video.");
+
+            const file = fileInput.files[0];
+            const status = document.getElementById('statusIndicator');
+            status.classList.remove('hidden');
+            
+            // 1. Init
+            status.innerText = "Initializing Event...";
+            const initRes = await fetch(`/sales/init`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ user_id: "ajay_web_test", filename: file.name })
+            });
+            const { event_id, upload_url } = await initRes.json();
+            document.getElementById('activeEventId').value = event_id;
+
+            // 2. Upload (CORS handled by gcloud command provided earlier)
+            status.innerText = "Uploading to Cloud Storage...";
+            await fetch(upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': 'video/mp4' } });
+
+            // 3. Process
+            status.innerText = "Gemini is analyzing video...";
+            await fetch(`/sales/${event_id}/process`, { method: 'POST' });
+
+            pollStatus(event_id);
+        }
+
+        async function pollStatus(eventId) {
+            const status = document.getElementById('statusIndicator');
+            const interval = setInterval(async () => {
+                const res = await fetch(`/sales/${eventId}/status`);
+                const data = await res.json();
+                status.innerText = `Status: ${data.status.replace(/_/g, ' ').toUpperCase()}`;
+                
+                if (data.status === 'ready_for_review') {
+                    clearInterval(interval);
+                    status.classList.add('text-green-400');
+                    loadSummary();
+                }
+                if (data.status === 'failed') clearInterval(interval);
+            }, 10000);
+        }
+
+        async function loadSummary() {
+            const eventId = document.getElementById('activeEventId').value;
+            if (!eventId) return;
+
+            const res = await fetch(`/sales/${eventId}/summary`);
+            const data = await res.json();
+
+            // FIXED: Load the Signed HTTPS URL into the player
+            const video = document.getElementById('mainVideo');
+            const source = document.getElementById('videoSource');
+            source.src = data.videoUrl;
+            video.load(); // Forces player to re-read source
+            document.getElementById('playbackInfo').innerText = `Source: ${eventId}`;
+
+            const container = document.getElementById('inventoryContainer');
+            container.innerHTML = '';
+
+            data.bundles.forEach(bundle => {
+                const bundleEl = document.createElement('div');
+                bundleEl.innerHTML = `<h3 class="text-blue-500 font-bold text-xs tracking-widest mt-8 mb-3 uppercase opacity-80">${bundle.name}</h3>`;
+                
+                bundle.items.forEach(item => {
+                    // FIXED: Display Logic for Predicted vs Actual
+                    const origPrice = item.actual_original_price ?? item.predicted_original_price ?? 0;
+                    const listPrice = item.actual_listing_price ?? item.predicted_listing_price ?? 0;
+                    const year = item.actual_year_of_purchase ?? item.predicted_year_of_purchase ?? "Unknown";
+
+                    const card = document.createElement('div');
+                    card.className = "bg-gray-900/40 p-5 rounded-2xl border border-gray-800 hover:border-blue-500/30 transition-all mb-3";
+                    card.innerHTML = `
+                        <div class="flex justify-between items-start">
+                            <div class="w-full">
+                                <div class="flex items-center justify-between mb-4">
+                                    <div class="flex items-center gap-3">
+                                        <input onchange="updateItem('${bundle.id}', '${item.id}', this)" data-field="name" type="text" value="${item.name}" class="bg-transparent font-bold text-lg text-white border-b border-transparent focus:border-blue-500 outline-none">
+                                        <span class="text-[10px] bg-blue-900/30 text-blue-400 px-2 py-1 rounded-full font-mono cursor-pointer hover:bg-blue-500 hover:text-white transition" onclick="seekTo(${item.video_timestamp})">📍 ${item.timestamp_label}</span>
+                                    </div>
+                                    <div class="text-[10px] text-gray-600 font-mono">ID: ${item.id.substring(0, 8)}</div>
+                                </div>
+                                <div class="grid grid-cols-4 gap-6">
+                                    <div>
+                                        <label class="text-[9px] text-gray-500 uppercase tracking-tighter">Brand</label>
+                                        <input onchange="updateItem('${bundle.id}', '${item.id}', this)" data-field="brand" type="text" value="${item.brand}" class="bg-gray-800 text-sm w-full rounded-lg px-2 py-1.5 border border-gray-700">
+                                    </div>
+                                    <div>
+                                        <label class="text-[9px] text-gray-500 uppercase tracking-tighter">Purchase Year</label>
+                                        <input onchange="updateItem('${bundle.id}', '${item.id}', this)" data-field="actual_year_of_purchase" type="number" value="${year}" class="bg-gray-800 text-sm w-full rounded-lg px-2 py-1.5 border border-gray-700">
+                                    </div>
+                                    <div>
+                                        <label class="text-[9px] text-gray-500 uppercase tracking-tighter">Retail (AUD)</label>
+                                        <input onchange="updateItem('${bundle.id}', '${item.id}', this)" data-field="actual_original_price" type="number" value="${origPrice}" class="bg-gray-800 text-sm w-full rounded-lg px-2 py-1.5 border border-gray-700">
+                                    </div>
+                                    <div>
+                                        <label class="text-[9px] text-blue-400 uppercase tracking-tighter font-bold">List Price</label>
+                                        <input onchange="updateItem('${bundle.id}', '${item.id}', this)" data-field="actual_listing_price" type="number" value="${listPrice}" class="bg-gray-800 text-sm w-full rounded-lg px-2 py-1.5 border border-blue-500/50 text-blue-400 font-bold">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    bundleEl.appendChild(card);
+                });
+                container.appendChild(bundleEl);
+            });
+        }
+
+        async function updateItem(bundleId, itemId, input) {
+            const eventId = document.getElementById('activeEventId').value;
+            const field = input.getAttribute('data-field');
+            const val = (input.type === 'number' || !isNaN(input.value) && input.value !== "") ? parseFloat(input.value) : input.value;
+            
+            await fetch(`/sales/${eventId}/bundles/${bundleId}/items/${itemId}`, {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ [field]: val })
+            });
+        }
+
+        async function triggerEstimate() {
+            const eventId = document.getElementById('activeEventId').value;
+            const status = document.getElementById('statusIndicator');
+            status.classList.remove('hidden');
+            status.innerText = "Recalculating with Sydney Market Data...";
+            await fetch(`/sales/${eventId}/estimate`, { method: 'POST' });
+            pollStatus(eventId);
+        }
+
+        function seekTo(seconds) {
+            const v = document.getElementById('mainVideo');
+            v.currentTime = seconds;
+            v.play();
+        }
+
+        function openPublishModal() { document.getElementById('publishModal').classList.remove('hidden'); }
+        function closePublishModal() { document.getElementById('publishModal').classList.add('hidden'); }
+
+        async function confirmPublish() {
+            const eventId = document.getElementById('activeEventId').value;
+            const date = document.getElementById('moveOutDate').value;
+            if(!date) return alert("Selection required.");
+
+            const res = await fetch(`/sales/${eventId}/publish`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ move_out_date: date })
+            });
+            const data = await res.json();
+            alert("SUCCESS: Sale is now Live!");
+            closePublishModal();
+            loadSummary();
+        }
+    </script>
+</body>
+</html>
