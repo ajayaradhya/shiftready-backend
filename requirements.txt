@@ -6,3 +6,4 @@ google-cloud-aiplatform
 python-multipart
 python-dotenv
 requests
+google-genai>=1.12.0

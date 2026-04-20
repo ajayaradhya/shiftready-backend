@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel
-import vertexai
 
 # Internal Imports
 from app.services.firestore import FirestoreService
@@ -37,9 +36,6 @@ async def lifespan(app: FastAPI):
     """Initializes all GCP clients once on startup."""
     global firestore_svc, gemini_processor, gcs_utils
     logger.info("Initializing Global GCP Services...")
-    
-    # 1. Initialize Vertex AI for the Sydney Region
-    vertexai.init(project=PROJECT_ID, location=REGION)
     
     # 2. Initialize our custom services
     firestore_svc = FirestoreService()
@@ -83,40 +79,52 @@ async def run_ai_pipeline(event_id: str, gcs_uri: str):
         firestore_svc.update_sale_status(event_id, "failed")
 
 async def run_pricing_pipeline(event_id: str):
-    """Refined pricing - uses LLM expertise on the latest data."""
+    """
+    Refined pricing - uses Gemini 2.5 Flash as a market expert 
+    to analyze human-verified facts.
+    """
     try:
-        # 1. Fetch current data (including user edits)
+        logger.info(f"🧠 Starting Pricing Pipeline for {event_id}")
+        
+        # 1. Fetch the full summary (includes your Stage 2 edits)
         summary = firestore_svc.get_full_event_summary(event_id)
         
-        # 2. Flatten bundles into a simple list of items for the LLM
-        all_items = []
+        # 2. Map data for the LLM (Prioritize User 'Actual' fields)
+        context_items = []
         for bundle in summary['bundles']:
             for item in bundle['items']:
-                # Include IDs so we can map them back later
-                item['bundle_id'] = bundle['id']
-                all_items.append(item)
+                context_items.append({
+                    "id": item['id'],
+                    "bundle_id": bundle['id'],
+                    "name": item['name'],
+                    "brand": item['brand'],
+                    "condition": item['condition'],
+                    # Fact: Use user input if available, else fallback to AI guess
+                    "original_price": item.get('actual_original_price') or item.get('predicted_original_price'),
+                    "purchase_year": item.get('actual_year_of_purchase') or item.get('predicted_year_of_purchase')
+                })
 
-        # 3. Get Expert Pricing from Gemini
-        priced_items = gemini_processor.estimate_listing_prices(all_items)
+        # 3. Call the Expert Pricing Method in gemini.py
+        priced_results = gemini_processor.estimate_listing_prices(context_items)
 
-        # 4. Update Firestore with new prices
-        for p_item in priced_items:
-            firestore_svc.update_item_data(
-                event_id, 
-                p_item['bundle_id'], 
-                p_item['id'], 
-                {"listing_price": p_item['listing_price']}
-            )
+        # 4. Batch update Firestore with suggested listing_prices
+        for p in priced_results:
+            firestore_svc.update_item_data(event_id, p['bundle_id'], p['id'], {
+                "predicted_listing_price": p['listing_price'],
+                "actual_listing_price": p['listing_price'] # Defaulting for user review
+            })
             
-        # 5. Refresh bundle totals
+        # 5. Refresh bundle totals (Sums up actual_listing_price)
         for bundle in summary['bundles']:
             firestore_svc.recalculate_bundle_total(event_id, bundle['id'])
 
+        # 6. CRITICAL: Update status to break the polling loop
         firestore_svc.update_sale_status(event_id, "ready_for_review")
-        logger.info(f"Pricing Pipeline completed for {event_id}")
+        logger.info(f"✅ Pricing Pipeline completed for {event_id}")
 
     except Exception as e:
-        logger.error(f"Pricing Error: {str(e)}")
+        logger.error(f"❌ Pricing Pipeline Error: {str(e)}")
+        firestore_svc.update_sale_status(event_id, "failed")
 
 # --- Endpoints ---
 
@@ -187,9 +195,21 @@ async def edit_item(event_id: str, bundle_id: str, item_id: str, updates: dict):
 
 @app.post("/sales/{event_id}/publish")
 async def publish_sale(event_id: str):
-    """Finalizes the sale and moves status to 'live'."""
+    # Before flipping status to live, we can do a final 'coalesce' 
+    # to ensure every item has a price.
+    summary = firestore_svc.get_full_event_summary(event_id)
+    
+    for bundle in summary['bundles']:
+        for item in bundle['items']:
+            if item.get('actual_listing_price') is None:
+                # If for some reason Stage 3 was skipped, use a fallback
+                fallback_price = item.get('predicted_listing_price') or 0
+                firestore_svc.update_item_data(event_id, bundle['id'], item['id'], {
+                    "actual_listing_price": fallback_price
+                })
+
     firestore_svc.update_sale_status(event_id, "live")
-    return {"status": "live", "message": "Your ShiftReady sale is now public!"}
+    return {"status": "live", "message": "Sale is live with all priced items!"}
 
 @app.post("/sales/{event_id}/estimate")
 async def trigger_price_estimation(event_id: str, background_tasks: BackgroundTasks):

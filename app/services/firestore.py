@@ -92,18 +92,13 @@ class FirestoreService:
         return doc.to_dict() if doc.exists else None
 
     def recalculate_bundle_total(self, event_id: str, bundle_id: str):
-        """
-        Aggregates all item prices within a bundle and updates the bundle's total price.
-        Ensures consistency after LLM price estimation or manual edits.
-        """
         bundle_ref = self.db.collection("saleEvents").document(event_id) \
                             .collection("bundles").document(bundle_id)
         
         items = bundle_ref.collection("items").stream()
-        # Summing the 'listing_price' field across all items in this bundle
-        total = sum(item.to_dict().get("listing_price", 0) for item in items)
+        # Logic: Sum the final price users will actually see
+        total = sum(i.to_dict().get("actual_listing_price", 0) for i in items)
         
-        # Using 'suggestedPrice' to match your add_bundle field name
         bundle_ref.update({"suggestedPrice": total})
         return total
 
