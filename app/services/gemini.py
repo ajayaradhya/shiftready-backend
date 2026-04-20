@@ -27,22 +27,26 @@ class GeminiProcessor:
 
     def process_walkthrough(self, gcs_uri: str) -> List[RoomBundle]:
         """
-        Stage 1: Analyzes a video walkthrough to extract inventory facts.
+        Stage 1: Analyzes video with Clock-Time Anchoring to fix first-frame bias.
         """
-        # Define the 'Persona' and 'Logic'
         prompt = """
         You are a professional home inventory specialist. 
         Analyze this walkthrough video and identify high-value sellable items.
-        
-        Rules:
+
+        TEMPORAL LOCALIZATION RULES (CRITICAL):
+        1. For every item, identify the START and END time where it is visible.
+        2. Provide a 'timestamp_label' in "MM:SS" format (e.g., "01:05") representing 
+        the MIDPOINT of that visibility where the item is clearest.
+        3. DO NOT default to "00:00" or "00:01". If an item appears at 7 seconds, 
+        the label MUST be "00:07".
+        4. If the video is empty for the first few seconds, ignore that timeframe.
+
+        EXTRACTION RULES:
         1. Group items into 'Room Bundles'.
         2. Identify brands (Dyson, Koala, Samsung, IKEA) precisely.
-        3. Assign condition: 'Like-New', 'Good', or 'Visible Wear'.
-        4. Predict the original purchase price (AUD) and purchase year.
-        5. Assign a confidence score (0.0 to 1.0).
+        3. Predict 'predicted_original_price' and 'predicted_year_of_purchase'.
         """
 
-        # Generate the compatible schema from Pydantic
         bundle_schema = self._get_clean_schema(RoomBundle)
         
         response = self.client.models.generate_content(
@@ -63,9 +67,22 @@ class GeminiProcessor:
 
         try:
             raw_data = json.loads(response.text)
-            return [RoomBundle(**b) for b in raw_data]
+            bundles = []
+            for b_data in raw_data:
+                # --- Temporal Conversion Logic ---
+                for item in b_data.get("items", []):
+                    label = item.get("timestamp_label")
+                    if label and ":" in label:
+                        # Convert "MM:SS" to total seconds
+                        minutes, seconds = map(int, label.split(":"))
+                        item["video_timestamp"] = float(minutes * 60 + seconds)
+                    else:
+                        item["video_timestamp"] = 0.0
+                
+                bundles.append(RoomBundle(**b_data))
+            return bundles
         except Exception as e:
-            print(f"Error parsing extraction response: {e}")
+            print(f"Error: {e}")
             raise e
 
     def estimate_listing_prices(self, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
