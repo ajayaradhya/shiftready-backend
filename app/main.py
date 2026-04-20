@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 import time
 import logging
@@ -29,6 +30,7 @@ REGION = os.getenv("GCP_REGION")
 firestore_svc = None
 gemini_processor = None
 gcs_utils = None
+current_year = datetime.now().year
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -63,39 +65,58 @@ class SaleInitResponse(BaseModel):
 # --- Background Task ---
 
 async def run_ai_pipeline(event_id: str, gcs_uri: str):
+    """Initial extraction - Brands/Years only, no pricing yet."""
     try:
         bundles = gemini_processor.process_walkthrough(gcs_uri)
-
         for bundle in bundles:
-            # 1. Filter out low-confidence noise (< 50%)
-            valid_items = [item for item in bundle.items if item.confidence >= 0.5]
-            
-            if not valid_items:
-                continue # Skip empty bundles
+            valid_items = [i for i in bundle.items if i.confidence >= 0.5]
+            if not valid_items: continue
 
             bundle_id = firestore_svc.add_bundle(event_id, bundle.bundle_name, 0)
-            total_price = 0
-
             for item in valid_items:
-                # Calculate initial price using our engine
-                # Note: We now pass the age based on the current year (2026)
-                age = 2026 - item.estimated_year_of_purchase
-                item.listing_price = PricingEngine.calculate_listing_price(
-                    orig_price=item.original_price,
-                    category="default",
-                    condition=item.condition,
-                    age_years=max(age, 1) # Minimum 1 year for depreciation logic
-                )
-                total_price += item.listing_price
+                # Note: listing_price starts as None/0
                 firestore_svc.add_item_to_bundle(event_id, bundle_id, item.dict())
 
-            firestore_svc.update_bundle_price(event_id, bundle_id, total_price)
+        firestore_svc.update_sale_status(event_id, "ready_for_review")
+    except Exception as e:
+        logger.error(f"Extraction Error: {str(e)}")
+        firestore_svc.update_sale_status(event_id, "failed")
+
+async def run_pricing_pipeline(event_id: str):
+    """Refined pricing - uses LLM expertise on the latest data."""
+    try:
+        # 1. Fetch current data (including user edits)
+        summary = firestore_svc.get_full_event_summary(event_id)
+        
+        # 2. Flatten bundles into a simple list of items for the LLM
+        all_items = []
+        for bundle in summary['bundles']:
+            for item in bundle['items']:
+                # Include IDs so we can map them back later
+                item['bundle_id'] = bundle['id']
+                all_items.append(item)
+
+        # 3. Get Expert Pricing from Gemini
+        priced_items = gemini_processor.estimate_listing_prices(all_items)
+
+        # 4. Update Firestore with new prices
+        for p_item in priced_items:
+            firestore_svc.update_item_data(
+                event_id, 
+                p_item['bundle_id'], 
+                p_item['id'], 
+                {"listing_price": p_item['listing_price']}
+            )
+            
+        # 5. Refresh bundle totals
+        for bundle in summary['bundles']:
+            firestore_svc.recalculate_bundle_total(event_id, bundle['id'])
 
         firestore_svc.update_sale_status(event_id, "ready_for_review")
+        logger.info(f"Pricing Pipeline completed for {event_id}")
 
     except Exception as e:
-        logger.error(f"Pipeline Error for {event_id}: {str(e)}")
-        firestore_svc.update_sale_status(event_id, "failed")
+        logger.error(f"Pricing Error: {str(e)}")
 
 # --- Endpoints ---
 
@@ -169,3 +190,10 @@ async def publish_sale(event_id: str):
     """Finalizes the sale and moves status to 'live'."""
     firestore_svc.update_sale_status(event_id, "live")
     return {"status": "live", "message": "Your ShiftReady sale is now public!"}
+
+@app.post("/sales/{event_id}/estimate")
+async def trigger_price_estimation(event_id: str, background_tasks: BackgroundTasks):
+    """User-triggered action to get AI price estimates based on current edits."""
+    firestore_svc.update_sale_status(event_id, "pricing_in_progress")
+    background_tasks.add_task(run_pricing_pipeline, event_id)
+    return {"message": "AI is analyzing Sydney market prices for your items..."}

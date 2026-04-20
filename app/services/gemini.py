@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 import json
 from typing import List
@@ -98,3 +99,40 @@ class GeminiProcessor:
             print(f"Error parsing Gemini response: {e}")
             print(f"Raw Response: {response.text}")
             raise e
+        
+    def estimate_listing_prices(self, items: List[dict]) -> List[dict]:
+        """
+        Takes the current inventory and asks Gemini to provide 
+        listing price estimates based on Sydney's resale market.
+        """
+        # Convert items to a clean string for the prompt
+        inventory_context = json.dumps(items, indent=2)
+
+        prompt = f"""
+        Context: You are a professional resale expert in Sydney, Australia. 
+        Current Year: {datetime.now().year}
+
+        Task: Analyze the following inventory and provide a 'listing_price' for every item.
+        
+        Guidelines for Pricing:
+        1. Brand Value: High-end brands (Dyson, Samsung, Koala) retain value better.
+        2. Age: Use the 'estimated_year_of_purchase' to calculate depreciation.
+        3. Condition: 'Like-New' should be priced near 60-80% of original, 'Visible Wear' 20-40%.
+        4. Local Demand: Factor in Sydney's high demand for whitegoods and furniture in rental hubs like Waterloo.
+
+        Inventory:
+        {inventory_context}
+
+        Output: Return the SAME JSON array but with the 'listing_price' field populated for every item.
+        """
+
+        # We use a simplified schema here: just a list of items with IDs and Prices
+        response = self.model.generate_content(
+            prompt,
+            generation_config=GenerationConfig(
+                response_mime_type="application/json",
+                temperature=0.2 # Slightly higher than 0.1 to allow for 'market intuition'
+            )
+        )
+        
+        return json.loads(response.text)
