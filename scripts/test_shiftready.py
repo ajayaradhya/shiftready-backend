@@ -92,7 +92,13 @@ def run_publish_stage(event_id):
     requests.patch(f"{API_BASE_URL}/sales/{event_id}/bundles/{b_id}/items/{i_id}", 
                    json={"actual_listing_price": final_price})
     
-    res = requests.post(f"{API_BASE_URL}/sales/{event_id}/publish").json()
+    payload = {"move_out_date": "2026-05-22"}
+    
+    res = requests.post(
+        f"{API_BASE_URL}/sales/{event_id}/publish", 
+        json=payload
+    ).json()
+    
     print(f"🎉 SUCCESS: {res['message']}")
 
 if __name__ == "__main__":

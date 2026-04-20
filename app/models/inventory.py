@@ -1,3 +1,5 @@
+from datetime import date
+
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
@@ -21,6 +23,7 @@ class InventoryItem(BaseModel):
     
     predicted_listing_price: Optional[float] = None # AI market estimate
     actual_listing_price: Optional[float] = None # Final live price
+
 
 class RoomBundle(BaseModel):
     id: Optional[str] = None

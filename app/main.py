@@ -58,6 +58,9 @@ class SaleInitResponse(BaseModel):
     upload_url: str
     gcs_uri: str
 
+class SalePublishRequest(BaseModel):
+    move_out_date: str
+
 # --- Background Task ---
 
 async def run_ai_pipeline(event_id: str, gcs_uri: str):
@@ -194,22 +197,44 @@ async def edit_item(event_id: str, bundle_id: str, item_id: str, updates: dict):
     return {"status": "updated"}
 
 @app.post("/sales/{event_id}/publish")
-async def publish_sale(event_id: str):
-    # Before flipping status to live, we can do a final 'coalesce' 
-    # to ensure every item has a price.
+async def publish_sale(event_id: str, payload: SalePublishRequest):
+    """
+    Finalizes the sale, anchors it to a move-out date, and ensures 
+    all items have an 'actual_listing_price' for the live listing.
+    """
+    # 1. Fetch current state
     summary = firestore_svc.get_full_event_summary(event_id)
-    
+    if not summary:
+        raise HTTPException(status_code=404, detail="Sale Event not found")
+
+    # 2. Coalesce prices (Ensure no item goes live with a 'None' price)
     for bundle in summary['bundles']:
         for item in bundle['items']:
             if item.get('actual_listing_price') is None:
-                # If for some reason Stage 3 was skipped, use a fallback
+                # Use AI's expert estimate as the fallback
                 fallback_price = item.get('predicted_listing_price') or 0
                 firestore_svc.update_item_data(event_id, bundle['id'], item['id'], {
                     "actual_listing_price": fallback_price
                 })
 
-    firestore_svc.update_sale_status(event_id, "live")
-    return {"status": "live", "message": "Sale is live with all priced items!"}
+    # 3. Update parent document with move_out_date and 'live' status
+    # We use a dict update here to include the new metadata
+    live_updates = {
+        "status": "live",
+        "moveOutDate": payload.move_out_date,
+        "publishedAt": datetime.now() 
+    }
+    
+    # Update the parent saleEvents document
+    firestore_svc.db.collection("saleEvents").document(event_id).update(live_updates)
+
+    logger.info(f"🚀 Sale {event_id} is now LIVE. Move-out set for {payload.move_out_date}")
+    
+    return {
+        "status": "live", 
+        "message": f"Sale is live! Items must be sold by {payload.move_out_date}.",
+        "move_out_date": payload.move_out_date
+    }
 
 @app.post("/sales/{event_id}/estimate")
 async def trigger_price_estimation(event_id: str, background_tasks: BackgroundTasks):
