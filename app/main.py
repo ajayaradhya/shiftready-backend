@@ -85,8 +85,8 @@ async def run_ai_pipeline(event_id: str, gcs_uri: str):
 
 async def run_pricing_pipeline(event_id: str):
     """
-    Refined pricing - uses Gemini 2.5 Flash as a market expert 
-    to analyze human-verified facts.
+    Refined pricing - uses Gemini 3.1 Flash Lite as a market expert 
+    to analyze human-verified facts and Sydney market trends.
     """
     try:
         logger.info(f"🧠 Starting Pricing Pipeline for {event_id}")
@@ -94,36 +94,55 @@ async def run_pricing_pipeline(event_id: str):
         # 1. Fetch the full summary (includes your Stage 2 edits)
         summary = firestore_svc.get_full_event_summary(event_id)
         
-        # 2. Map data for the LLM (Prioritize User 'Actual' fields)
+        # Determine move-out date from summary or default to today
+        move_out_date = summary.get("moveOutDate")
+        if not move_out_date:
+            move_out_date = datetime.now().strftime("%Y-%m-%d")
+
+        # 2. Map data for the LLM & Create local Ground Truth Index
+        # We store the bundle_id locally so we don't rely on the AI to return it.
+        item_to_bundle_map = {}
         context_items = []
+        
         for bundle in summary['bundles']:
             for item in bundle['items']:
+                # Save the mapping: item_id -> bundle_id
+                item_to_bundle_map[item['id']] = bundle['id']
+                
                 context_items.append({
                     "id": item['id'],
-                    "bundle_id": bundle['id'],
                     "name": item['name'],
                     "brand": item['brand'],
                     "condition": item['condition'],
-                    # Fact: Use user input if available, else fallback to AI guess
+                    # Prioritize user 'actual' fields over initial AI guesses
                     "original_price": item.get('actual_original_price') or item.get('predicted_original_price'),
                     "purchase_year": item.get('actual_year_of_purchase') or item.get('predicted_year_of_purchase')
                 })
 
         # 3. Call the Expert Pricing Method in gemini.py
-        priced_results = gemini_processor.estimate_listing_prices(context_items)
+        # Now passing the move_out_date for urgency-based pricing logic
+        priced_results = gemini_processor.estimate_listing_prices(context_items, move_out_date)
 
-        # 4. Batch update Firestore with suggested listing_prices
+        # 4. Update Firestore using our deterministic local map
         for p in priced_results:
-            firestore_svc.update_item_data(event_id, p['bundle_id'], p['id'], {
-                "predicted_listing_price": p['listing_price'],
-                "actual_listing_price": p['listing_price'] # Defaulting for user review
-            })
+            item_id = p.get('id')
+            bundle_id = item_to_bundle_map.get(item_id)
+            
+            if bundle_id:
+                # We update the item with the new AI-suggested listing price and reasoning
+                firestore_svc.update_item_data(event_id, bundle_id, item_id, {
+                    "predicted_listing_price": p.get('listing_price', 0),
+                    "actual_listing_price": p.get('listing_price', 0), # Defaulting for user review
+                    "pricing_reasoning": p.get('reasoning', 'Market adjustment')
+                })
+            else:
+                logger.warning(f"⚠️ AI returned unknown item ID: {item_id}")
             
         # 5. Refresh bundle totals (Sums up actual_listing_price)
         for bundle in summary['bundles']:
             firestore_svc.recalculate_bundle_total(event_id, bundle['id'])
 
-        # 6. CRITICAL: Update status to break the polling loop
+        # 6. CRITICAL: Update status to break the UI polling loop
         firestore_svc.update_sale_status(event_id, "ready_for_review")
         logger.info(f"✅ Pricing Pipeline completed for {event_id}")
 

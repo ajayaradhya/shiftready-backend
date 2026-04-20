@@ -13,27 +13,31 @@ load_dotenv()
 
 class GeminiProcessor:
     def __init__(self, project_id: str):
+        # 2026 Best Practice: Centralized System Instruction
+        system_instruction = """
+        You are the ShiftReady Relocation Agent. You specialize in the Sydney 2026 
+        resale market (Waterloo/Zetland/Alexandria). 
+        Your goal is to ensure items are sold at maximum fair value before the 
+        user's move-out deadline. Be precise, realistic, and market-aware.
         """
-        Initializes the 2026 Unified Gen AI Client.
-        Using vertexai=True anchors this to your GCP infrastructure in Sydney.
-        """
+        
         self.client = genai.Client(
             vertexai=True,
             project=project_id,
-            location=os.getenv("GCP_REGION", "australia-southeast1")
+            location="global"
         )
-        # 2026 Standard Model
-        self.model_id = "gemini-2.5-flash"
+        self.model_id = "gemini-3.1-flash-lite-preview"
+        self.system_instruction = system_instruction
 
     def process_walkthrough(self, gcs_uri: str) -> List[RoomBundle]:
         """
         Stage 1: Analyzes video with Clock-Time Anchoring to fix first-frame bias.
         """
         prompt = """
-        You are a professional home inventory specialist. 
-        Analyze this walkthrough video and identify high-value sellable items.
+        You are a professional home inventory specialist in 2026.
+        Analyze this video and identify sellable items.
 
-        TEMPORAL LOCALIZATION RULES (CRITICAL):
+        TEMPORAL LOCALIZATION RULES:
         1. For every item, identify the START and END time where it is visible.
         2. Provide a 'timestamp_label' in "MM:SS" format (e.g., "01:05") representing 
         the MIDPOINT of that visibility where the item is clearest.
@@ -41,10 +45,16 @@ class GeminiProcessor:
         the label MUST be "00:07".
         4. If the video is empty for the first few seconds, ignore that timeframe.
 
-        EXTRACTION RULES:
-        1. Group items into 'Room Bundles'.
-        2. Identify brands (Dyson, Koala, Samsung, IKEA) precisely.
-        3. Predict 'predicted_original_price' and 'predicted_year_of_purchase'.
+        DATING CLUES for 'predicted_year_of_purchase':
+        1. USB-C CHECK: If an electronic item has a USB-C port, it is almost certainly 2020-2026.
+        2. DESIGN LOGIC: Look for matte finishes, thin bezels, and minimalist branding typical of 2022+ designs.
+        3. LOGO ANCHOR: Use the 2026 versions of brand logos (e.g., the simplified Dyson or Samsung logos).
+        4. HARD RULE: DO NOT default to 2010. If the item looks well-maintained but the age is unclear, guess between 2021 and 2025. 
+
+        EXTRACTION:
+        1. Identify Brands precisely.
+        2. Predict 'predicted_original_price' in AUD.
+        3. Predict 'predicted_year_of_purchase' using the Dating Clues above.
         """
 
         bundle_schema = self._get_clean_schema(RoomBundle)
@@ -61,7 +71,8 @@ class GeminiProcessor:
                 response_schema=types.Schema(
                     type="ARRAY",
                     items=bundle_schema
-                )
+                ),
+                tools=[types.Tool(google_search=types.GoogleSearch())]
             )
         )
 
@@ -85,37 +96,36 @@ class GeminiProcessor:
             print(f"Error: {e}")
             raise e
 
-    def estimate_listing_prices(self, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        Stage 3: Market Analysis. Provides suggested listing prices 
-        based on current Sydney market data and user-provided facts.
-        """
+    def estimate_listing_prices(self, items: List[Dict[str, Any]], move_out_date: str) -> List[Dict[str, Any]]:
         inventory_context = json.dumps(items, indent=2)
+        days_remaining = (datetime.strptime(move_out_date, "%Y-%m-%d") - datetime.now()).days
 
         prompt = f"""
-        Context: You are a Sydney-based resale expert (Facebook Marketplace, Gumtree).
-        Current Year: {datetime.now().year}
+        Current Date: {datetime.now().strftime('%Y-%m-%d')}
+        Move-out Deadline: {move_out_date} ({days_remaining} days remaining)
 
-        Task: Analyze the inventory and provide a competitive 'listing_price' in AUD.
+        TASK: Estimate listing prices for these items in the Sydney market.
         
-        Pricing Rules:
-        1. Prioritize 'actual' fields (User Ground Truth) over 'predicted' fields.
-        2. Sydney Demand: Fridges, Washing Machines, and Bed Frames are high-demand.
-        3. Depreciation: Tech drops ~30%/year; Designer furniture drops ~20%/year.
-        4. Target: Quick 7-day sale for a move-out relocation.
-
-        Inventory:
+        MARKET CONTEXT:
+        - Waterloo/Zetland high-density apartment rules apply.
+        - Urgency Factor: { 'EXTREME' if days_remaining < 7 else 'NORMAL' }.
+        
+        INVENTORY DATA:
         {inventory_context}
 
-        Output: Return a JSON array of objects with 'id', 'bundle_id', and 'listing_price'.
+        For each item, provide a 'listing_price' (AUD) and a 'reasoning' string 
+        explaining the price (e.g., "High demand in Waterloo" or "Heavy depreciation").
         """
 
         response = self.client.models.generate_content(
             model=self.model_id,
             contents=prompt,
             config=types.GenerateContentConfig(
-                temperature=0.2, # Added intuition for market fluctuation
-                response_mime_type="application/json"
+                system_instruction=self.system_instruction, # Persona efficiency
+                temperature=0.3,
+                response_mime_type="application/json",
+                # ADDED: Search grounding for the Pricing Stage!
+                tools=[types.Tool(google_search=types.GoogleSearch())] 
             )
         )
 
