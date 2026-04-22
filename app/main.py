@@ -4,9 +4,8 @@ import time
 import logging
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
-from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # Internal Imports
@@ -48,6 +47,19 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down resources...")
 
 app = FastAPI(title="ShiftReady API", version="1.0.0", lifespan=lifespan)
+
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,           # Allow your Next.js app
+    allow_credentials=True,          # Allow cookies/auth headers
+    allow_methods=["*"],             # Allow all HTTP methods (GET, POST, PATCH, etc.)
+    allow_headers=["*"],             # Allow all headers
+)
 
 # --- Request/Response Schemas ---
 
@@ -247,10 +259,13 @@ async def publish_sale(event_id: str, payload: SalePublishRequest):
 
 @app.post("/sales/{event_id}/estimate")
 async def trigger_price_estimation(event_id: str, background_tasks: BackgroundTasks):
-    """User-triggered action to get AI price estimates based on current edits."""
+    """User-triggered action to get AI price estimates."""
     firestore_svc.update_sale_status(event_id, "pricing_in_progress")
     background_tasks.add_task(run_pricing_pipeline, event_id)
-    return {"message": "AI is analyzing Sydney market prices for your items..."}
+    return {
+        "status": "pricing_in_progress", 
+        "message": "AI is analyzing Sydney market prices..."
+    }
 
 @app.get("/sales/{event_id}/summary")
 async def get_sale_summary(event_id: str):
@@ -283,16 +298,3 @@ async def get_sale_summary(event_id: str):
                 item["actual_listing_price"] = item.get("predicted_listing_price")
 
     return summary
-
-
-# Static Files (For the Review UI)
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-static_path = os.path.join(BASE_DIR, "static")
-
-app.mount("/static", StaticFiles(directory=static_path), name="static")
-
-@app.get("/", response_class=HTMLResponse)
-async def read_index():
-    index_path = os.path.join(static_path, "index.html")
-    with open(index_path, encoding="utf-8") as f:
-        return f.read()
