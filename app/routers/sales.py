@@ -10,15 +10,40 @@ from app.models.schemas import (
 # Import shared service singletons
 from app.services import firestore_svc, gemini_processor, gcs_utils, BUCKET_NAME
 
-# The prefix here handles the "/sales" part of the URL
 router = APIRouter(prefix="/sales")
 
 # --- BACKGROUND PIPELINES ---
 
+async def run_extraction_pipeline(event_id: str, gcs_uri: str):
+    """
+    Stage 1: AI Vision Analysis.
+    Extracts bundles and items from the GCS video walkthrough.
+    """
+    try:
+        # 1. Update status to processing
+        firestore_svc.transition_sale_status(event_id, SaleStatus.PROCESSING)
+        
+        # 2. Call Gemini Vision
+        bundles = gemini_processor.process_walkthrough(gcs_uri)
+        
+        # 3. Save results to Firestore hierarchy
+        for b in bundles:
+            bundle_id = firestore_svc.add_bundle(event_id, b.bundle_name, 0)
+            for item in b.items:
+                # Convert Pydantic model to dict for Firestore
+                item_data = item.model_dump() if hasattr(item, 'model_dump') else item.dict()
+                firestore_svc.add_item_to_bundle(event_id, bundle_id, item_data)
+        
+        # 4. Move to Review stage
+        firestore_svc.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
+    except Exception as e:
+        print(f"Extraction Pipeline Failed: {e}")
+        firestore_svc.transition_sale_status(event_id, SaleStatus.FAILED)
+
 async def run_pricing_pipeline(event_id: str):
     """
-    Expert Pricing Loop: Uses Gemini 3.1 Flash Lite to analyze human-verified 
-    inventory data against Sydney market trends.
+    Stage 2: AI Pricing Analysis.
+    Analyzes verified inventory data against Sydney market trends.
     """
     try:
         summary = firestore_svc.get_full_event_summary(event_id)
@@ -39,7 +64,6 @@ async def run_pricing_pipeline(event_id: str):
                     "purchase_year": item.get('actual_year_of_purchase') or item.get('predicted_year_of_purchase')
                 })
 
-        # AI Market Analysis
         priced_results = gemini_processor.estimate_listing_prices(context_items, move_out_date)
 
         for p in priced_results:
@@ -49,52 +73,70 @@ async def run_pricing_pipeline(event_id: str):
                 firestore_svc.update_item_data(event_id, bundle_id, item_id, {
                     "predicted_listing_price": p.get('listing_price', 0),
                     "actual_listing_price": p.get('listing_price', 0),
-                    "pricing_reasoning": p.get('reasoning', 'Market adjustment based on urgency.')
+                    "pricing_reasoning": p.get('reasoning', 'Market adjustment based on Sydney demand.')
                 })
         
-        # Sync bundle aggregates
         for bundle in summary['bundles']:
             firestore_svc.recalculate_bundle_total(event_id, bundle['id'])
 
         firestore_svc.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
-        
     except Exception as e:
         firestore_svc.transition_sale_status(event_id, SaleStatus.FAILED)
 
 # --- CORE SALE ROUTES ---
 
+@router.post("/init", response_model=SaleInitResponse)
+async def init_sale(payload: SaleInitRequest):
+    """
+    Step 1: Create the Firestore record and get a GCS Signed URL for upload.
+    Path: POST /api/v1/sales/init
+    """
+    # Create GCS URI
+    gcs_uri = f"gs://{BUCKET_NAME}/{payload.user_id}/{payload.filename}"
+    
+    # Initialize in Firestore
+    event_id = firestore_svc.create_sale_event(payload.user_id, gcs_uri)
+    
+    # Generate Signed URL for frontend PUT request
+    upload_url = gcs_utils.generate_upload_url(BUCKET_NAME, f"{payload.user_id}/{payload.filename}")
+    
+    return {
+        "event_id": event_id,
+        "upload_url": upload_url,
+        "gcs_uri": gcs_uri
+    }
+
+@router.post("/{event_id}/process")
+async def start_processing(event_id: str, background_tasks: BackgroundTasks):
+    """
+    Step 2: Trigger Stage 1 AI (Vision Extraction).
+    Path: POST /api/v1/sales/{event_id}/process
+    """
+    event = firestore_svc.get_sale_event(event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Sale not found")
+    
+    background_tasks.add_task(run_extraction_pipeline, event_id, event['videoUrl'])
+    return {"status": "processing_started"}
+
 @router.get("/")
 async def list_sales(user_id: str = "ajay_web_test"):
-    """
-    Dashboard view for all relocation events.
-    Path: GET /api/v1/sales/
-    """
     return firestore_svc.list_all_sales(user_id)
 
 @router.get("/{event_id}/summary")
 async def get_sale_summary(event_id: str):
-    """
-    Deep-fetch the full inventory hierarchy.
-    Path: GET /api/v1/sales/{event_id}/summary
-    """
     summary = firestore_svc.get_full_event_summary(event_id)
     if not summary:
         raise HTTPException(status_code=404, detail="Sale not found")
     
-    # Sign the GCS URI for the web player
     gcs_uri = summary.get("videoUrl")
     if gcs_uri and gcs_uri.startswith("gs://"):
         stripped = gcs_uri.replace("gs://", "").split("/", 1)
         summary["videoUrl"] = gcs_utils.generate_download_url(stripped[0], stripped[1])
-
     return summary
 
 @router.get("/{event_id}/status")
 async def get_status(event_id: str):
-    """
-    Polling endpoint for 'Zero-Blink' UI transitions.
-    Path: GET /api/v1/sales/{event_id}/status
-    """
     event = firestore_svc.get_sale_event(event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Sale Event not found")
@@ -104,26 +146,22 @@ async def get_status(event_id: str):
 
 @router.post("/{event_id}/estimate")
 async def trigger_reestimation(event_id: str, background_tasks: BackgroundTasks):
-    """User-triggered AI pricing analysis."""
     firestore_svc.transition_sale_status(event_id, SaleStatus.PRICING_IN_PROGRESS)
     background_tasks.add_task(run_pricing_pipeline, event_id)
     return {"status": SaleStatus.PRICING_IN_PROGRESS}
 
 @router.post("/{event_id}/publish")
 async def publish_sale(event_id: str, payload: SalePublishRequest):
-    """Finalizes inventory and goes LIVE on the marketplace."""
     summary = firestore_svc.get_full_event_summary(event_id)
     if not summary:
         raise HTTPException(status_code=404, detail="Sale not found")
 
-    # Ensure prices are populated
     for bundle in summary.get('bundles', []):
         for item in bundle['items']:
             if item.get('actual_listing_price') is None:
                 fallback = item.get('predicted_listing_price') or 0
                 firestore_svc.update_item_data(event_id, bundle['id'], item['id'], {"actual_listing_price": fallback})
 
-    # Update metadata and flip state
     firestore_svc.db.collection("saleEvents").document(event_id).update({
         "moveOutDate": payload.move_out_date,
         "publishedAt": datetime.now()
@@ -133,7 +171,6 @@ async def publish_sale(event_id: str, payload: SalePublishRequest):
 
 @router.post("/{event_id}/unpublish")
 async def unpublish_sale(event_id: str):
-    """Emergency brake: Pulls the sale from public view."""
     event = firestore_svc.get_sale_event(event_id)
     if not event or event['status'] not in [SaleStatus.LIVE, SaleStatus.PARTIALLY_SOLD]:
         raise HTTPException(status_code=400, detail="Sale is not currently active.")
