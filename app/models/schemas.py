@@ -1,3 +1,5 @@
+from enum import Enum
+
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
@@ -66,8 +68,27 @@ class ItemUpdate(BaseModel):
 
 class SaleStatusResponse(BaseModel):
     id: str
-    status: str
+    status: SaleStatus
     sellerId: str
     createdAt: datetime
     itemCount: int = 0
     totalValue: float = 0.0
+
+
+class SaleStatus(str, Enum):
+    # Discovery Phase
+    PENDING_UPLOAD = "pending_upload"
+    PROCESSING = "processing"          # Gemini capturing objects
+    
+    # Review Phase
+    READY_FOR_REVIEW = "ready_for_review"
+    PRICING_IN_PROGRESS = "pricing_in_progress" # Gemini analyzing Sydney market
+    
+    # Active Phase
+    LIVE = "live"                      # Publicly buyable
+    PARTIALLY_SOLD = "partially_sold"   # Some items marked sold
+    
+    # Conclusion Phase
+    EXPIRED = "expired"                # Past move-out date
+    ARCHIVED = "archived"              # Move complete, record-only
+    FAILED = "failed"
