@@ -108,3 +108,56 @@ class FirestoreService:
                           .collection("bundles").document(bundle_id) \
                           .collection("items").document(item_id)
         item_ref.update(updates)
+
+    def delete_bundle(self, event_id: str, bundle_id: str):
+        """Deletes a bundle and all its nested items."""
+        bundle_ref = self.db.collection("saleEvents").document(event_id) \
+                          .collection("bundles").document(bundle_id)
+        
+        # Firestore does not delete sub-collections automatically
+        items = bundle_ref.collection("items").stream()
+        for item in items:
+            item.reference.delete()
+            
+        bundle_ref.delete()
+        return True
+
+    def delete_item(self, event_id: str, bundle_id: str, item_id: str):
+        """Deletes a specific item and triggers bundle total recalculation."""
+        item_ref = self.db.collection("saleEvents").document(event_id) \
+                          .collection("bundles").document(bundle_id) \
+                          .collection("items").document(item_id)
+        item_ref.delete()
+        # Recalculate bundle price now that an asset is gone
+        self.recalculate_bundle_total(event_id, bundle_id)
+        return True
+
+    def update_bundle_metadata(self, event_id: str, bundle_id: str, updates: dict):
+        """Updates bundle level data like name or publication status."""
+        self.db.collection("saleEvents").document(event_id) \
+               .collection("bundles").document(bundle_id).update(updates)
+        
+    def list_all_sales(self, user_id: str):
+        """Dashboard view: Lists all sales for a user with minimal metadata."""
+        docs = self.db.collection("saleEvents") \
+                      .where("sellerId", "==", user_id) \
+                      .order_by("createdAt", direction="DESCENDING").stream()
+        sales = []
+        for d in docs:
+            data = d.to_dict()
+            data["id"] = d.id
+            sales.append(data)
+        return sales
+
+    def get_bundle(self, event_id: str, bundle_id: str):
+        """Deep link: Fetch a specific bundle's metadata."""
+        doc = self.db.collection("saleEvents").document(event_id) \
+                     .collection("bundles").document(bundle_id).get()
+        return {**doc.to_dict(), "id": doc.id} if doc.exists else None
+
+    def get_item_standalone(self, event_id: str, bundle_id: str, item_id: str):
+        """Deep link: Fetch a specific item directly."""
+        doc = self.db.collection("saleEvents").document(event_id) \
+                     .collection("bundles").document(bundle_id) \
+                     .collection("items").document(item_id).get()
+        return {**doc.to_dict(), "id": doc.id} if doc.exists else None
