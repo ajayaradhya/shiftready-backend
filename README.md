@@ -34,71 +34,66 @@ ShiftReady is an AI-enabled relocation and inventory management monolith designe
 The project follows a modular monolith pattern, isolating business logic (Services) from the interface (Routers) to ensure maintainability.
 
 ```mermaid
-graph TD
-    %% --- EXTERNAL ACTORS & SERVICES ---
-    subgraph External["2026 ShiftReady Ecosystem"]
+graph LR
+    %% --- ACTORS ---
+    User[("🏠<br/>Relocating<br/>User")]
+    Buyer[("💰<br/>Sydney<br/>Buyer")]
+
+    %% --- THE CORE SYSTEM ---
+    subgraph System["[The Monolith] ShiftReady AI Platform"]
         direction TB
-        FE[("React Frontend")]
-        GCS[("Google Cloud Storage")]
-        Firestore[("Cloud Firestore")]
-        Vertex[("Gemini 3.1 Flash Lite")]
+        
+        Intake["1. Video Intake<br/>(Initialize Sale & Upload)"]
+        Scanner["2. AI Inventory Scan<br/>(Gemini Vision Extraction)"]
+        Cockpit["3. Review Cockpit<br/>(Human-in-the-Loop Edits)"]
+        Pricer["4. AI Urgency Pricer<br/>(Gemini Market Analysis)"]
+        LiveDB[("Cloud Ledger<br/>(Inventory, Prices, Status)")]
+        
+        %% Internal System Flows
+        Intake -->|'processing'| Scanner
+        Scanner -->|Populates| LiveDB
+        LiveDB <-->|Review/Edit| Cockpit
+        Cockpit -->|Triggers pricing| Pricer
+        Pricer -->|Updates Prices| LiveDB
     end
 
-    %% --- THE MONOLITH ---
-    subgraph Monolith["ShiftReady Monolith (Cloud Run)"]
-        direction TB
-        Main["app/main.py"]
-
-        subgraph Interface["1. Routers"]
-            SR["app/routers/sales.py"]
-        end
-
-        subgraph Models["2. Contracts"]
-            Schemas["app/models/schemas.py"]
-            InvModels["app/models/inventory.py"]
-        end
-
-        subgraph StateMachine["3. Transition Engine"]
-            StatusEnums["SaleStatus Enum"]
-        end
-
-        subgraph Services["4. Services"]
-            FS_Svc["app/services/firestore.py"]
-            Gem_Svc["app/services/gemini.py"]
-            GCS_Util["app/utils/gcs.py"]
-        end
+    %% --- EXTERNAL DEPENDENCIES ---
+    subgraph Cloud["External Cloud Services"]
+        VideoStore[("Google Cloud Storage<br/>(Walkthrough Video)")]
+        GSearch[("Google Search<br/>(Grounding Market Data)")]
     end
 
-    %% --- FLOWS ---
-    FE == "1. POST /init" ==> Main
-    Main --> SR
-    FE == "2. PUT Video" ==> GCS
-    FE == "3. POST /process" ==> SR
+    %% --- USER FLOWS ---
+    User == "A. Records & Uploads Walkthrough" ==> Intake
+    Intake -. "Stores Video" .-> VideoStore
+    Scanner -. "Analyzes Video" .-> VideoStore
+    User == "B. Verifies Inventory" ==> Cockpit
+    User == "C. Sets Deadline & Publishes" ==> Cockpit
     
-    SR -. "Uses" .-> Schemas
-    SR -. "Uses" .-> InvModels
+    %% AI Grounding Flow
+    Pricer -. "Queries Resale Values" .-> GSearch
 
-    SR == "AI Extraction" ==> E_Pipe["run_extraction_pipeline"]
-    E_Pipe --> Gem_Svc
-    E_Pipe --> FS_Svc
-
-    SR == "AI Pricing" ==> P_Pipe["run_pricing_pipeline"]
-    P_Pipe --> Gem_Svc
-    P_Pipe --> FS_Svc
-
-    FS_Svc <== "Sync" ==> Firestore
-    Gem_Svc <== "Analyze" ==> Vertex
-    Gem_Svc <== "Search" ==> GoogleSearch["Google Search"]
+    %% Final Output
+    LiveDB ==>|'live'| Marketplace[("🌐<br/>Public<br/>Marketplace")]
+    Marketplace ====|"Browse & Buy"| Buyer
 
     %% --- STYLING ---
-    style Main fill:#E3F2FD,stroke:#1976D2
-    style SR fill:#E3F2FD,stroke:#1976D2
-    style Schemas fill:#E8F5E9,stroke:#2E7D32
-    style InvModels fill:#E8F5E9,stroke:#2E7D32
-    style FS_Svc fill:#F3E5F5,stroke:#7B1FA2
-    style Gem_Svc fill:#F3E5F5,stroke:#7B1FA2
-    style StateMachine fill:#FFF3E0,stroke:#EF6C00
-    style External fill:#FFFDE7,stroke:#FBC02D
+    %% Client/External (Yellow)
+    style User fill:#FFFDE7,stroke:#FBC02D,stroke-width:2px;
+    style Buyer fill:#FFFDE7,stroke:#FBC02D,stroke-width:2px;
+    style Cloud fill:#FFFDE7,stroke:#FBC02D,stroke-width:1px,stroke-dasharray: 5 5;
+    style VideoStore fill:#FFFDE7,stroke:#FBC02D,stroke-width:1px;
+    style GSearch fill:#FFFDE7,stroke:#FBC02D,stroke-width:1px;
+    
+    %% Core System Components (Blue)
+    style Intake fill:#E3F2FD,stroke:#1976D2,stroke-width:1px;
+    style Scanner fill:#E3F2FD,stroke:#1976D2,stroke-width:1px;
+    style Cockpit fill:#E3F2FD,stroke:#1976D2,stroke-width:1px;
+    style Pricer fill:#E3F2FD,stroke:#1976D2,stroke-width:1px;
+    style LiveDB fill:#E3F2FD,stroke:#1976D2,stroke-width:2px;
+    
+    %% Marketplace (Green)
+    style Marketplace fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px;
 ```
 
 ## File Structure
