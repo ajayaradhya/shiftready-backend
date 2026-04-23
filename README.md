@@ -34,125 +34,71 @@ ShiftReady is an AI-enabled relocation and inventory management monolith designe
 The project follows a modular monolith pattern, isolating business logic (Services) from the interface (Routers) to ensure maintainability.
 
 ```mermaid
-%%{init: {
-  'theme': 'base',
-  'themeVariables': {
-    'primaryColor': '#BBDEFB',
-    'primaryTextColor': '#0D47A1',
-    'primaryBorderColor': '#1976D2',
-    'lineColor': '#1976D2',
-    'secondaryColor': '#E1BEE7',
-    'tertiaryColor': '#FFE082',
-    'noteBorderColor': '#FFA000',
-    'noteBkgColor': '#FFF8E1'
-  }
-}%%}
-
 graph TD
     %% --- EXTERNAL ACTORS & SERVICES ---
     subgraph External["2026 ShiftReady Ecosystem"]
         direction TB
-        FE[("React Frontend<br/>(relocation-ui)")]
-        GCS[("Google Cloud Storage (GCS)<br/>(Walkthrough Videos)")]
-        Firestore[("Google Cloud Firestore<br/>(Hierarchical DB)")]
-        Vertex[("Google Vertex AI<br/>(Gemini 3.1 Flash Lite)")]
+        FE[("React Frontend")]
+        GCS[("Google Cloud Storage")]
+        Firestore[("Cloud Firestore")]
+        Vertex[("Gemini 3.1 Flash Lite")]
     end
 
     %% --- THE MONOLITH ---
-    subgraph Monolith["[The Monolith] ShiftReady Backend (FastAPI on Cloud Run)"]
+    subgraph Monolith["ShiftReady Monolith (Cloud Run)"]
         direction TB
-        Main["app/main.py<br/>(CORS, Middleware, Init)"]
+        Main["app/main.py"]
 
-        %% Interface Layer
-        subgraph Interface["1. The Interface (Routers)"]
-            SR[("app/routers/sales.py<br/>(Endpoints & Orchestration)")]
+        subgraph Interface["1. Routers"]
+            SR["app/routers/sales.py"]
         end
 
-        %% Data Models & Contracts
-        subgraph Models["2. The Contracts (Pydantic Models)"]
-            direction LR
-            Schemas[("app/models/schemas.py<br/>(API Requests/Responses)")]
-            InvModels[("app/models/inventory.py<br/>(RoomBundle, ItemPrediction)")]
+        subgraph Models["2. Contracts"]
+            Schemas["app/models/schemas.py"]
+            InvModels["app/models/inventory.py"]
         end
 
-        %% State Machine & Logic
-        subgraph StateMachine["3. The Transition Engine"]
-            StatusEnums[("SaleStatus Enum<br/>PENDING -> LIVE -> ARCHIVED")]
+        subgraph StateMachine["3. Transition Engine"]
+            StatusEnums["SaleStatus Enum"]
         end
 
-        %% Business Logic Layer (Services)
-        subgraph Services["4. Business Logic (Singletons)"]
-            direction TB
-            FS_Svc[("app/services/firestore.py<br/>(FirestoreService)")]
-            Gem_Svc[("app/services/gemini.py<br/>(GeminiProcessor)")]
-            GCS_Util[("app/utils/gcs.py<br/>(GCSUtils)")]
+        subgraph Services["4. Services"]
+            FS_Svc["app/services/firestore.py"]
+            Gem_Svc["app/services/gemini.py"]
+            GCS_Util["app/utils/gcs.py"]
         end
     end
 
-    %% --- FLOWS & INTERACTIONS ---
-
-    %% Client Interactions
+    %% --- FLOWS ---
     FE == "1. POST /init" ==> Main
     Main --> SR
-    FE == "2. PUT (Signed URL)" ==> GCS
-    FE == "3. POST /{id}/process (Start Stage 1 AI)" ==> SR
-    FE == "4. GET /{id}/status (Polling)" ==> SR
-    FE == "5. POST /{id}/estimate (Start Stage 2 AI)" ==> SR
-
-    %% Routers to Models (Serialization)
+    FE == "2. PUT Video" ==> GCS
+    FE == "3. POST /process" ==> SR
+    
     SR -. "Uses" .-> Schemas
     SR -. "Uses" .-> InvModels
 
-    %% Background Pipeline 1: AI Extraction
-    SR == "Triggers<br/>Background Task" ==> E_Pipe("run_extraction_pipeline")
-    E_Pipe == "A. Get videoUrl" ==> FS_Svc
-    E_Pipe == "B. Analyze Video" ==> Gem_Svc
-    E_Pipe == "C. Save RoomBundles & Items" ==> FS_Svc
-    E_Pipe == "D. Transition Status<br/>(READY_FOR_REVIEW)" ==> StateMachine
+    SR == "AI Extraction" ==> E_Pipe["run_extraction_pipeline"]
+    E_Pipe --> Gem_Svc
+    E_Pipe --> FS_Svc
 
-    %% Background Pipeline 2: AI Pricing
-    SR == "Triggers<br/>Background Task" ==> P_Pipe("run_pricing_pipeline")
-    P_Pipe == "A. Get Full Summary" ==> FS_Svc
-    P_Pipe == "B. Analyze Market (Sydney)" ==> Gem_Svc
-    P_Pipe == "C. Save Predicted Prices & Reasoning" ==> FS_Svc
-    P_Pipe == "D. Transition Status<br/>(READY_FOR_REVIEW)" ==> StateMachine
+    SR == "AI Pricing" ==> P_Pipe["run_pricing_pipeline"]
+    P_Pipe --> Gem_Svc
+    P_Pipe --> FS_Svc
 
-    %% Services to External GCP
-    FS_Svc <== "Read/Write Inventory Hierarchy" ==> Firestore
-    GCS_Util -. "Generate Signed URLs" .-> GCS
-    Gem_Svc <== "Multimodal generation" ==> Vertex
-
-    %% Pricing Grounding
-    Gem_Svc <== "Grounds prices<br/>(google_search)" ==> GoogleSearch("Google Search Engine")
+    FS_Svc <== "Sync" ==> Firestore
+    Gem_Svc <== "Analyze" ==> Vertex
+    Gem_Svc <== "Search" ==> GoogleSearch["Google Search"]
 
     %% --- STYLING ---
-    %% Modifying node colors for clear visualization
-    %% Interface Layer (Light Blue)
-    style Main fill:#E3F2FD,stroke:#1976D2,stroke-width:2px;
-    style SR fill:#E3F2FD,stroke:#1976D2,stroke-width:1px;
-    
-    %% Models Layer (Green)
-    style Schemas fill:#E8F5E9,stroke:#2E7D32,stroke-width:1px;
-    style InvModels fill:#E8F5E9,stroke:#2E7D32,stroke-width:1px;
-
-    %% Services Layer (Purple)
-    style FS_Svc fill:#F3E5F5,stroke:#7B1FA2,stroke-width:1px;
-    style Gem_Svc fill:#F3E5F5,stroke:#7B1FA2,stroke-width:1px;
-    style GCS_Util fill:#F3E5F5,stroke:#7B1FA2,stroke-width:1px;
-
-    %% State Machine (Orange)
-    style StateMachine fill:#FFF3E0,stroke:#EF6C00,stroke-width:1px;
-    style StatusEnums fill:#FFF3E0,stroke:#EF6C00,stroke-width:1px;
-
-    %% Pipelines (Dashed Border)
-    style E_Pipe fill:#ECEFF1,stroke:#546E7A,stroke-width:1px,stroke-dasharray: 5 5;
-    style P_Pipe fill:#ECEFF1,stroke:#546E7A,stroke-width:1px,stroke-dasharray: 5 5;
-
-    %% External (Yellow)
-    style External fill:#FFFDE7,stroke:#FBC02D,stroke-width:1px;
-    style GCS fill:#FFFDE7,stroke:#FBC02D,stroke-width:1px;
-    style Firestore fill:#FFFDE7,stroke:#FBC02D,stroke-width:1px;
-    style Vertex fill:#FFFDE7,stroke:#FBC02D,stroke-width:1px;
+    style Main fill:#E3F2FD,stroke:#1976D2
+    style SR fill:#E3F2FD,stroke:#1976D2
+    style Schemas fill:#E8F5E9,stroke:#2E7D32
+    style InvModels fill:#E8F5E9,stroke:#2E7D32
+    style FS_Svc fill:#F3E5F5,stroke:#7B1FA2
+    style Gem_Svc fill:#F3E5F5,stroke:#7B1FA2
+    style StateMachine fill:#FFF3E0,stroke:#EF6C00
+    style External fill:#FFFDE7,stroke:#FBC02D
 ```
 
 ## File Structure
