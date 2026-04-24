@@ -1,0 +1,45 @@
+# --- ShiftReady AI Exclusion File ---
+
+# 1. Ignore Frontend/UI (Focusing strictly on Backend)
+ui/
+frontend/
+node_modules/
+.next/
+dist/
+build/
+*.html
+*.css
+
+# 2. Python & Environment Noise
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+.env
+.env.*
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 3. Git & IDE
+.git/
+.gitignore
+.vscode/
+.idea/
+*.swp
+*.log
+
+# 4. Infrastructure & Meta (Optional)
+# Uncomment these if you want Gemini to ignore DevOps/Legal files 
+# and focus ONLY on the code in /app
+# LICENSE
+# README.md
+# .dockerignore
+# Dockerfile
+# cloudbuild.yaml
+
+# 5. Data & Scripts
+# Ignore local test scripts if you are focusing on the core Service Layer
+# scripts/

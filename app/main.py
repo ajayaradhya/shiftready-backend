@@ -1,4 +1,5 @@
 import logging
+import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -13,6 +14,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # --- App Initialization ---
+
+start_time = time.time()
 
 app = FastAPI(
     title="ShiftReady API",
@@ -47,12 +50,15 @@ app.include_router(sales.router, prefix="/api/v1", tags=["Inventory & Sales"])
 @app.get("/health")
 async def health_check():
     """
-    Service health check. 
+    Service health check.
     Used by Cloud Run to determine container readiness.
     """
     return {
         "status": "operational",
-        "version": "1.1.0"
+        "version": "1.1.0",
+        "timestamp": time.time(),
+        "uptime_seconds": int(time.time() - start_time),
+        "service": "shiftready-backend"
     }
 
 if __name__ == "__main__":

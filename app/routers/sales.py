@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, WebSocket, WebSocketDisconnect
 from typing import List, Dict, Any
 from datetime import datetime
 
@@ -9,79 +9,10 @@ from app.models.schemas import (
 
 # Import shared service singletons
 from app.services import firestore_svc, gemini_processor, gcs_utils, BUCKET_NAME
+from app.services.pipelines import run_extraction_pipeline, run_pricing_pipeline
+from app.services.notifier import notifier
 
 router = APIRouter(prefix="/sales")
-
-# --- BACKGROUND PIPELINES ---
-
-async def run_extraction_pipeline(event_id: str, gcs_uri: str):
-    """
-    Stage 1: AI Vision Analysis.
-    Extracts bundles and items from the GCS video walkthrough.
-    """
-    try:
-        # 1. Update status to processing
-        firestore_svc.transition_sale_status(event_id, SaleStatus.PROCESSING)
-        
-        # 2. Call Gemini Vision
-        bundles = gemini_processor.process_walkthrough(gcs_uri)
-        
-        # 3. Save results to Firestore hierarchy
-        for b in bundles:
-            bundle_id = firestore_svc.add_bundle(event_id, b.bundle_name, 0)
-            for item in b.items:
-                # Convert Pydantic model to dict for Firestore
-                item_data = item.model_dump() if hasattr(item, 'model_dump') else item.dict()
-                firestore_svc.add_item_to_bundle(event_id, bundle_id, item_data)
-        
-        # 4. Move to Review stage
-        firestore_svc.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
-    except Exception as e:
-        print(f"Extraction Pipeline Failed: {e}")
-        firestore_svc.transition_sale_status(event_id, SaleStatus.FAILED)
-
-async def run_pricing_pipeline(event_id: str):
-    """
-    Stage 2: AI Pricing Analysis.
-    Analyzes verified inventory data against Sydney market trends.
-    """
-    try:
-        summary = firestore_svc.get_full_event_summary(event_id)
-        move_out_date = summary.get("moveOutDate") or datetime.now().strftime("%Y-%m-%d")
-
-        context_items = []
-        item_to_bundle_map = {}
-        
-        for bundle in summary['bundles']:
-            for item in bundle['items']:
-                item_to_bundle_map[item['id']] = bundle['id']
-                context_items.append({
-                    "id": item['id'],
-                    "name": item['name'],
-                    "brand": item['brand'],
-                    "condition": item['condition'],
-                    "original_price": item.get('actual_original_price') or item.get('predicted_original_price'),
-                    "purchase_year": item.get('actual_year_of_purchase') or item.get('predicted_year_of_purchase')
-                })
-
-        priced_results = gemini_processor.estimate_listing_prices(context_items, move_out_date)
-
-        for p in priced_results:
-            item_id = p.get('id')
-            bundle_id = item_to_bundle_map.get(item_id)
-            if bundle_id:
-                firestore_svc.update_item_data(event_id, bundle_id, item_id, {
-                    "predicted_listing_price": p.get('listing_price', 0),
-                    "actual_listing_price": p.get('listing_price', 0),
-                    "pricing_reasoning": p.get('reasoning', 'Market adjustment based on Sydney demand.')
-                })
-        
-        for bundle in summary['bundles']:
-            firestore_svc.recalculate_bundle_total(event_id, bundle['id'])
-
-        firestore_svc.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
-    except Exception as e:
-        firestore_svc.transition_sale_status(event_id, SaleStatus.FAILED)
 
 # --- CORE SALE ROUTES ---
 
@@ -142,6 +73,22 @@ async def get_status(event_id: str):
         raise HTTPException(status_code=404, detail="Sale Event not found")
     return {"status": event.get("status", SaleStatus.PENDING_UPLOAD)}
 
+@router.websocket("/{event_id}/ws")
+async def status_websocket(websocket: WebSocket, event_id: str):
+    """
+    Real-time status updates via WebSocket.
+    The client connects here to be notified when the pipeline finishes.
+    """
+    await notifier.connect(event_id, websocket)
+    try:
+        # Keep connection open until client disconnects
+        while True:
+            # We can optionally listen for pings/messages from client here
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        notifier.disconnect(event_id, websocket)
+
+
 # --- STATE TRANSITIONS ---
 
 @router.post("/{event_id}/estimate")
@@ -162,10 +109,12 @@ async def publish_sale(event_id: str, payload: SalePublishRequest):
                 fallback = item.get('predicted_listing_price') or 0
                 firestore_svc.update_item_data(event_id, bundle['id'], item['id'], {"actual_listing_price": fallback})
 
-    firestore_svc.db.collection("saleEvents").document(event_id).update({
+    # Move direct DB access to service layer
+    firestore_svc.update_sale_metadata(event_id, {
         "moveOutDate": payload.move_out_date,
         "publishedAt": datetime.now()
     })
+    
     firestore_svc.transition_sale_status(event_id, SaleStatus.LIVE)
     return {"status": SaleStatus.LIVE}
 
@@ -199,6 +148,14 @@ async def add_manual_item(event_id: str, bundle_id: str, payload: ItemCreateRequ
 @router.patch("/{event_id}/bundles/{bundle_id}/items/{item_id}")
 async def update_item(event_id: str, bundle_id: str, item_id: str, updates: Dict[str, Any]):
     firestore_svc.update_item_data(event_id, bundle_id, item_id, updates)
+    
+    # Notify connected clients that an item has changed (Real-time sync)
+    await notifier.notify_event(event_id, {
+        "type": "ITEM_UPDATED",
+        "item_id": item_id,
+        "updates": updates
+    })
+
     if "actual_listing_price" in updates:
         firestore_svc.recalculate_bundle_total(event_id, bundle_id)
     return {"status": "updated"}

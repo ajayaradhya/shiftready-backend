@@ -52,6 +52,11 @@ class FirestoreService:
         event_ref.update(update_data)
         return True
 
+    def update_sale_metadata(self, event_id: str, updates: dict):
+        """General purpose metadata updates for the root sale event."""
+        event_ref = self.db.collection("saleEvents").document(event_id)
+        event_ref.update({**updates, "updatedAt": firestore.SERVER_TIMESTAMP})
+
     def list_all_sales(self, user_id: str):
         """Dashboard view: Minimal metadata for high-speed listing."""
         docs = self.db.collection("saleEvents") \
