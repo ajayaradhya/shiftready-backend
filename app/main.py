@@ -48,6 +48,17 @@ app.include_router(sales.router, prefix="/api/v1", tags=["Inventory & Sales"])
 
 # --- Base Endpoints ---
 
+@app.get("/")
+async def root():
+    """
+    Root endpoint to satisfy default Cloud Run startup probes.
+    """
+    return {
+        "message": "ShiftReady API is live",
+        "docs": "/docs",
+        "health": "/health"
+    }
+
 @app.get("/health")
 async def health_check():
     """

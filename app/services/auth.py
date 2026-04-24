@@ -1,29 +1,59 @@
+import os
+import firebase_admin
+from firebase_admin import auth, credentials
 from fastapi import Depends, HTTPException, status, Header, Query
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Optional
 from app.services import firestore_svc
 
+# Initialize Firebase Admin SDK
+# In Cloud Run, it automatically uses the default service account credentials.
+if not firebase_admin._apps:
+    firebase_admin.initialize_app()
+
+security = HTTPBearer(auto_error=False)
+
 class User(BaseModel):
     id: str
     email: str
+    name: Optional[str] = None
 
 async def get_current_user(
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    res: Optional[HTTPAuthorizationCredentials] = Depends(security),
     token: Optional[str] = Query(None)
 ) -> User:
     """
-    Dependency that extracts the user identity.
-    2026 Strategy: Swap this mock with Firebase/Auth0 JWT validation.
+    Verifies the Firebase ID Token (JWT) from Bearer header or Query param.
     """
-    user_id = x_user_id or token
-    if not user_id:
+    id_token = None
+    if res:
+        id_token = res.credentials
+    elif token:
+        id_token = token
+
+    if not id_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required: Auth header or token query param missing."
+            detail="Missing authentication token."
         )
     
-    # In a real app, you'd fetch user details from a DB or token claims
-    return User(id=user_id, email=f"{user_id}@shiftready.io")
+    try:
+        # Verify the JWT against Firebase's public keys
+        decoded_token = auth.verify_id_token(id_token)
+        user = User(
+            id=decoded_token['uid'],
+            email=decoded_token.get('email', ''),
+            name=decoded_token.get('name')
+        )
+        # Synchronize user profile in Firestore background
+        firestore_svc.upsert_user(user.id, user.email, user.name)
+        return user
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid or expired token: {str(e)}"
+        )
 
 async def validate_sale_owner(
     event_id: str, 

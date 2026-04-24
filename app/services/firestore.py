@@ -9,6 +9,18 @@ class FirestoreService:
         project_id = os.getenv("GCP_PROJECT_ID")
         self.db = firestore.Client(project=project_id)
 
+    # --- USER OPERATIONS ---
+
+    def upsert_user(self, user_id: str, email: str, name: Optional[str] = None):
+        """Ensures a user record exists in Firestore for profile metadata."""
+        user_ref = self.db.collection("users").document(user_id)
+        user_ref.set({
+            "email": email,
+            "displayName": name,
+            "lastLogin": firestore.SERVER_TIMESTAMP,
+            "updatedAt": firestore.SERVER_TIMESTAMP
+        }, merge=True)
+
     # --- SALE EVENT: ROOT OPERATIONS ---
 
     def create_sale_event(self, user_id: str, video_url: str) -> str:
