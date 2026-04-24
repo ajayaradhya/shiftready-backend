@@ -1,27 +1,39 @@
 import argparse
 import random
 import requests
+import json
 import os
 import time
+from websocket import create_connection
 from datetime import datetime
 
 # Configuration
-API_BASE_URL = "http://127.0.0.1:8000"
+API_BASE_URL = "http://127.0.0.1:8000/api/v1"
+WS_BASE_URL = "ws://127.0.0.1:8000/api/v1"
 VIDEO_FILE = "test_video.mp4"
 USER_ID = "ajay_dev_test"
 
-def poll_for_status(event_id, target_status="ready_for_review"):
-    print(f"⏳ Polling status for {event_id}...")
-    while True:
-        res = requests.get(f"{API_BASE_URL}/sales/{event_id}/status").json()
-        status = res.get("status")
-        print(f"   Current Status: {status}")
-        if status == target_status:
-            return True
-        if status == "failed":
-            print("❌ Pipeline failed. Check server logs.")
-            return False
-        time.sleep(10)
+def wait_for_notification(event_id, target_status):
+    """
+    🔌 WebSocket Client: Listens for the server to push a status update.
+    """
+    ws_url = f"{WS_BASE_URL}/sales/{event_id}/ws"
+    print(f"🔌 Connecting to WebSocket: {ws_url}")
+    ws = create_connection(ws_url, timeout=60) # Fail if no message in 60s
+    try:
+        while True:
+            message = ws.recv()
+            data = json.loads(message)
+            status = data.get("status")
+            print(f"   [WS Notification]: {status} - {data.get('message', '')}")
+            
+            if status == target_status:
+                return True
+            if status == "failed":
+                print(f"❌ Pipeline failed: {data.get('error')}")
+                return False
+    finally:
+        ws.close()
 
 def get_inventory_item(event_id):
     summary = requests.get(f"{API_BASE_URL}/sales/{event_id}/summary").json()
@@ -43,7 +55,7 @@ def run_extraction_stage():
         requests.put(upload_url, data=f, headers={"Content-Type": "video/mp4"})
     
     requests.post(f"{API_BASE_URL}/sales/{event_id}/process")
-    if poll_for_status(event_id):
+    if wait_for_notification(event_id, "ready_for_review"):
         _, _, item = get_inventory_item(event_id)
         print(f"✅ Extraction Complete! AI found a [{item['name']}]")
         print(f"   AI Predicted Price: ${item['predicted_original_price']}")
@@ -75,7 +87,7 @@ def run_estimation_stage(event_id):
     print("Triggering LLM expert analysis based on human-verified facts...")
     requests.post(f"{API_BASE_URL}/sales/{event_id}/estimate")
     
-    if poll_for_status(event_id):
+    if wait_for_notification(event_id, "ready_for_review"):
         _, _, item = get_inventory_item(event_id)
         print(f"✅ AI Suggested Listing Price: ${item.get('predicted_listing_price')}")
 
@@ -99,7 +111,7 @@ def run_publish_stage(event_id):
         json=payload
     ).json()
     
-    print(f"🎉 SUCCESS: {res['message']}")
+    print(f"🎉 SUCCESS: Sale status is now {res.get('status')}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ShiftReady Production-Test CLI")

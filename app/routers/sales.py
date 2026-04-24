@@ -81,6 +81,15 @@ async def status_websocket(websocket: WebSocket, event_id: str):
     """
     await notifier.connect(event_id, websocket)
     try:
+        # State Sync on Connect: Send the current status immediately
+        # This prevents the client from being stuck if the event already fired.
+        current_event = firestore_svc.get_sale_event(event_id)
+        if current_event:
+            await websocket.send_json({
+                "status": current_event.get("status"),
+                "message": "Connected to status stream"
+            })
+            
         # Keep connection open until client disconnects
         while True:
             # We can optionally listen for pings/messages from client here

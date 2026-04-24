@@ -20,8 +20,16 @@ class ConnectionManager:
             self.active_connections[event_id].remove(websocket)
 
     async def notify_event(self, event_id: str, message: dict):
-        if event_id in self.active_connections:
-            for connection in self.active_connections[event_id]:
+        connections = self.active_connections.get(event_id, [])
+        if not connections:
+            logger.info(f"📡 No active WS connections for event {event_id}. Notification dropped.")
+            return
+
+        logger.info(f"📡 Broadcasting to {len(connections)} clients for event {event_id}: {message.get('status')}")
+        for connection in connections:
+            try:
                 await connection.send_json(message)
+            except Exception as e:
+                logger.error(f"❌ Failed to send WS message: {e}")
 
 notifier = ConnectionManager()
