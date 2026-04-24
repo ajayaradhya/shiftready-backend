@@ -11,14 +11,18 @@ from app.models.schemas import (
 from app.services import firestore_svc, gemini_processor, gcs_utils, BUCKET_NAME
 from app.services.pipelines import run_extraction_pipeline, run_pricing_pipeline
 from app.services.notifier import notifier
-from app.services.auth import get_current_user, validate_sale_owner, User
+from app.services.auth import get_current_user, validate_sale_owner, User, security
 
 router = APIRouter(prefix="/sales")
 
 # --- CORE SALE ROUTES ---
 
 @router.post("/init", response_model=SaleInitResponse)
-async def init_sale(payload: SaleInitRequest, current_user: User = Depends(get_current_user)):
+async def init_sale(
+    payload: SaleInitRequest, 
+    current_user: User = Depends(get_current_user),
+    _ = Depends(security) # Re-adds the "Lock" icon to Swagger UI
+):
     """
     Step 1: Create the Firestore record and get a GCS Signed URL for upload.
     Path: POST /api/v1/sales/init

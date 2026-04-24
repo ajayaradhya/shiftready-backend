@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+from typing import Optional
 from google.cloud import firestore
 from app.models.schemas import SaleStatus
 

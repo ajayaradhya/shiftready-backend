@@ -2,7 +2,8 @@ import os
 import firebase_admin
 from firebase_admin import auth, credentials
 from fastapi import Depends, HTTPException, status, Header, Query
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from starlette.requests import HTTPConnection
+from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 from typing import Optional
 from app.services import firestore_svc
@@ -20,16 +21,22 @@ class User(BaseModel):
     name: Optional[str] = None
 
 async def get_current_user(
-    res: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    connection: HTTPConnection,
     token: Optional[str] = Query(None)
 ) -> User:
     """
     Verifies the Firebase ID Token (JWT) from Bearer header or Query param.
+    Compatible with both HTTP (Header) and WebSockets (Query Param).
     """
     id_token = None
-    if res:
-        id_token = res.credentials
-    elif token:
+    
+    # 1. Try to extract from Authorization Header (Standard for REST)
+    auth_header = connection.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        id_token = auth_header.split(" ")[1]
+    
+    # 2. Fallback to Query Parameter (Standard for WebSockets)
+    if not id_token and token:
         id_token = token
 
     if not id_token:
@@ -38,6 +45,13 @@ async def get_current_user(
             detail="Missing authentication token."
         )
     
+    # Allow mock tokens for local integration testing (scripts/test_shiftready.py)
+    # We only allow this if NOT running in Cloud Run (detected via K_SERVICE env var)
+    if not os.getenv("K_SERVICE") and id_token.startswith("dev_"):
+        user = User(id=id_token, email=f"{id_token}@shiftready.test", name="Dev User")
+        firestore_svc.upsert_user(user.id, user.email, user.name)
+        return user
+
     try:
         # Verify the JWT against Firebase's public keys
         decoded_token = auth.verify_id_token(id_token)

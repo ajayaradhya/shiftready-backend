@@ -11,10 +11,10 @@ from datetime import datetime
 API_BASE_URL = "http://127.0.0.1:8080/api/v1"
 WS_BASE_URL = "ws://127.0.0.1:8080/api/v1"
 VIDEO_FILE = "test_video.mp4"
-USER_ID = "ajay_dev_test"
+USER_ID = "dev_ajay_2026"
 
 # Authentication header for local testing
-AUTH_HEADERS = {"X-User-ID": USER_ID}
+AUTH_HEADERS = {"Authorization": f"Bearer {USER_ID}"}
 
 def wait_for_notification(ws, target_status):
     """
