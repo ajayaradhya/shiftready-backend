@@ -30,6 +30,8 @@ steps:
       - '--set-env-vars'
       - 'GCP_PROJECT_ID=$PROJECT_ID,GCP_SERVICE_ACCOUNT=shiftready-backend@$PROJECT_ID.iam.gserviceaccount.com,GCP_UPLOAD_BUCKET=${_UPLOAD_BUCKET}'
       - '--allow-unauthenticated'
+      - '--port'
+      - '8080'
 
 images:
   - '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPO_NAME}/${_SERVICE_NAME}:$COMMIT_SHA'
