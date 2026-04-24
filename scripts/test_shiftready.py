@@ -16,27 +16,31 @@ USER_ID = "ajay_dev_test"
 # Authentication header for local testing
 AUTH_HEADERS = {"X-User-ID": USER_ID}
 
-def wait_for_notification(event_id, target_status):
+def wait_for_notification(ws, target_status):
     """
-    🔌 WebSocket Client: Listens for the server to push a status update.
+    🔌 Listens on an EXISTING WebSocket for a specific status.
     """
+    while True:
+        message = ws.recv()
+        data = json.loads(message)
+        msg_type = data.get("type", "STATUS_UPDATE")
+        
+        if msg_type == "ITEM_UPDATED":
+            print(f"   [WS Real-time]: Item {data['item_id']} was just updated!")
+            continue
+
+        status = data.get("status")
+        print(f"   [WS Notification]: {status} - {data.get('message', '')}")
+        
+        if status == target_status:
+            return True
+        if status == "failed":
+            return False
+
+def open_ws(event_id):
     ws_url = f"{WS_BASE_URL}/sales/{event_id}/ws?token={USER_ID}"
-    print(f"🔌 Connecting to WebSocket: {ws_url}")
-    ws = create_connection(ws_url, timeout=60) # Fail if no message in 60s
-    try:
-        while True:
-            message = ws.recv()
-            data = json.loads(message)
-            status = data.get("status")
-            print(f"   [WS Notification]: {status} - {data.get('message', '')}")
-            
-            if status == target_status:
-                return True
-            if status == "failed":
-                print(f"❌ Pipeline failed: {data.get('error')}")
-                return False
-    finally:
-        ws.close()
+    print(f"🔌 Opening persistent WebSocket: {ws_url}")
+    return create_connection(ws_url, timeout=60)
 
 def get_inventory_item(event_id):
     summary = requests.get(f"{API_BASE_URL}/sales/{event_id}/summary", headers=AUTH_HEADERS).json()
@@ -62,13 +66,16 @@ def run_extraction_stage():
         requests.put(upload_url, data=f, headers={"Content-Type": "video/mp4"})
     
     requests.post(f"{API_BASE_URL}/sales/{event_id}/process", headers=AUTH_HEADERS)
-    if wait_for_notification(event_id, "ready_for_review"):
+    
+    ws = open_ws(event_id) # <--- Open the WebSocket connection
+    if wait_for_notification(ws, "ready_for_review"): # <--- Pass the ws object
         _, _, item = get_inventory_item(event_id)
         print(f"✅ Extraction Complete! AI found a [{item['name']}]")
         print(f"   AI Predicted Price: ${item['predicted_original_price']}")
         print(f"   AI Predicted Year: {item['predicted_year_of_purchase']}")
-        return event_id
-    return None
+        return event_id, ws # <--- Return the ws object
+    ws.close() # <--- Close the websocket if the stage fails
+    return None, None # <--- Return None for ws if failed
 
 def run_human_correction_stage(event_id):
     """Stage 2: Human Fact Correction"""
@@ -91,14 +98,14 @@ def run_human_correction_stage(event_id):
     )
     print("✅ User 'Ground Truth' saved to actual_* fields.")
 
-def run_estimation_stage(event_id):
+def run_estimation_stage(event_id, ws):
     """Stage 3: AI Market Pricing"""
     print("\n🧠 STAGE 3: AI Market Pricing")
     print("-----------------------------------")
     print("Triggering LLM expert analysis based on human-verified facts...")
     requests.post(f"{API_BASE_URL}/sales/{event_id}/estimate", headers=AUTH_HEADERS)
     
-    if wait_for_notification(event_id, "ready_for_review"):
+    if wait_for_notification(ws, "ready_for_review"):
         _, _, item = get_inventory_item(event_id)
         print(f"✅ AI Suggested Listing Price: ${item.get('predicted_listing_price')}")
 
@@ -135,11 +142,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.mode == "full":
-        eid = run_extraction_stage()
-        if eid:
+        eid, ws = run_extraction_stage()
+        if eid and ws:
             run_human_correction_stage(eid)
-            run_estimation_stage(eid)
+            run_estimation_stage(eid, ws)
             run_publish_stage(eid)
+            ws.close()
     elif args.mode == "extract":
         run_extraction_stage()
     elif args.mode == "correct":

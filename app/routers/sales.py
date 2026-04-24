@@ -87,6 +87,7 @@ async def status_websocket(
     try:
         # State Sync on Connect: Use the event already fetched by validate_sale_owner
         await websocket.send_json({
+            "type": "STATUS_UPDATE",
             "status": event.get("status"),
             "message": "Connected to status stream"
         })
@@ -147,23 +148,23 @@ async def unpublish_sale(event_id: str, event: dict = Depends(validate_sale_owne
 # --- INVENTORY CRUD ---
 
 @router.post("/{event_id}/bundles")
-async def add_bundle(event_id: str, payload: BundleCreateRequest):
+async def add_bundle(event_id: str, payload: BundleCreateRequest, _ = Depends(validate_sale_owner)):
     bundle_id = firestore_svc.add_bundle(event_id, payload.name, 0)
     return {"bundle_id": bundle_id}
 
 @router.delete("/{event_id}/bundles/{bundle_id}")
-async def remove_bundle(event_id: str, bundle_id: str):
+async def remove_bundle(event_id: str, bundle_id: str, _ = Depends(validate_sale_owner)):
     firestore_svc.delete_bundle(event_id, bundle_id)
     return {"status": "deleted"}
 
 @router.post("/{event_id}/bundles/{bundle_id}/items")
-async def add_manual_item(event_id: str, bundle_id: str, payload: ItemCreateRequest):
+async def add_manual_item(event_id: str, bundle_id: str, payload: ItemCreateRequest, _ = Depends(validate_sale_owner)):
     item_id = firestore_svc.add_item_to_bundle(event_id, bundle_id, payload.dict())
     firestore_svc.recalculate_bundle_total(event_id, bundle_id)
     return {"item_id": item_id}
 
 @router.patch("/{event_id}/bundles/{bundle_id}/items/{item_id}")
-async def update_item(event_id: str, bundle_id: str, item_id: str, updates: Dict[str, Any]):
+async def update_item(event_id: str, bundle_id: str, item_id: str, updates: Dict[str, Any], _ = Depends(validate_sale_owner)):
     firestore_svc.update_item_data(event_id, bundle_id, item_id, updates)
     
     # Notify connected clients that an item has changed (Real-time sync)
@@ -178,6 +179,6 @@ async def update_item(event_id: str, bundle_id: str, item_id: str, updates: Dict
     return {"status": "updated"}
 
 @router.delete("/{event_id}/bundles/{bundle_id}/items/{item_id}")
-async def remove_item(event_id: str, bundle_id: str, item_id: str):
+async def remove_item(event_id: str, bundle_id: str, item_id: str, _ = Depends(validate_sale_owner)):
     firestore_svc.delete_item(event_id, bundle_id, item_id)
     return {"status": "deleted"}
