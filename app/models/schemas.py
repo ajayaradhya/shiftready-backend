@@ -65,15 +65,6 @@ class ItemUpdate(BaseModel):
 
 # --- Response / Dashboard Schemas ---
 
-class SaleStatusResponse(BaseModel):
-    id: str
-    status: SaleStatus
-    sellerId: str
-    createdAt: datetime
-    itemCount: int = 0
-    totalValue: float = 0.0
-
-
 class SaleStatus(str, Enum):
     # Discovery Phase
     PENDING_UPLOAD = "pending_upload"
@@ -91,3 +82,12 @@ class SaleStatus(str, Enum):
     EXPIRED = "expired"                # Past move-out date
     ARCHIVED = "archived"              # Move complete, record-only
     FAILED = "failed"
+
+
+class SaleStatusResponse(BaseModel):
+    id: str
+    status: SaleStatus
+    sellerId: str
+    createdAt: datetime
+    itemCount: int = 0
+    totalValue: float = 0.0
