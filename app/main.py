@@ -77,6 +77,7 @@ if __name__ == "__main__":
     import uvicorn
     # Cloud Run injects the 'PORT' environment variable (defaults to 8080).
     # We use that value, falling back to 8080 for local development.
+    # Ensure we use 8080 as the standard for 2026 Cloud Run deployments.
     port = int(os.getenv("PORT", 8080))
     # We only enable reload if we are running locally (port 8080 is common in dev too).
     uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=(os.getenv("GCP_PROJECT_ID") is None))
