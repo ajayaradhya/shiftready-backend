@@ -10,7 +10,6 @@ CURRENT_YEAR = datetime.now().year
 # --- Sale Initialization ---
 
 class SaleInitRequest(BaseModel):
-    user_id: str
     filename: str
 
 class SaleInitResponse(BaseModel):

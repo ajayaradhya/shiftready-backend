@@ -11,25 +11,26 @@ from app.models.schemas import (
 from app.services import firestore_svc, gemini_processor, gcs_utils, BUCKET_NAME
 from app.services.pipelines import run_extraction_pipeline, run_pricing_pipeline
 from app.services.notifier import notifier
+from app.services.auth import get_current_user, validate_sale_owner, User
 
 router = APIRouter(prefix="/sales")
 
 # --- CORE SALE ROUTES ---
 
 @router.post("/init", response_model=SaleInitResponse)
-async def init_sale(payload: SaleInitRequest):
+async def init_sale(payload: SaleInitRequest, current_user: User = Depends(get_current_user)):
     """
     Step 1: Create the Firestore record and get a GCS Signed URL for upload.
     Path: POST /api/v1/sales/init
     """
     # Create GCS URI
-    gcs_uri = f"gs://{BUCKET_NAME}/{payload.user_id}/{payload.filename}"
+    gcs_uri = f"gs://{BUCKET_NAME}/{current_user.id}/{payload.filename}"
     
     # Initialize in Firestore
-    event_id = firestore_svc.create_sale_event(payload.user_id, gcs_uri)
+    event_id = firestore_svc.create_sale_event(current_user.id, gcs_uri)
     
     # Generate Signed URL for frontend PUT request
-    upload_url = gcs_utils.generate_upload_url(BUCKET_NAME, f"{payload.user_id}/{payload.filename}")
+    upload_url = gcs_utils.generate_upload_url(BUCKET_NAME, f"{current_user.id}/{payload.filename}")
     
     return {
         "event_id": event_id,
@@ -38,25 +39,25 @@ async def init_sale(payload: SaleInitRequest):
     }
 
 @router.post("/{event_id}/process")
-async def start_processing(event_id: str, background_tasks: BackgroundTasks):
+async def start_processing(
+    event_id: str, 
+    background_tasks: BackgroundTasks,
+    event: dict = Depends(validate_sale_owner)
+):
     """
     Step 2: Trigger Stage 1 AI (Vision Extraction).
     Path: POST /api/v1/sales/{event_id}/process
     """
-    event = firestore_svc.get_sale_event(event_id)
-    if not event:
-        raise HTTPException(status_code=404, detail="Sale not found")
-    
     background_tasks.add_task(run_extraction_pipeline, event_id, event['videoUrl'])
     return {"status": "processing_started"}
 
 @router.get("/")
-async def list_sales(user_id: str = "ajay_web_test"):
-    return firestore_svc.list_all_sales(user_id)
+async def list_sales(current_user: User = Depends(get_current_user)):
+    return firestore_svc.list_all_sales(current_user.id)
 
 @router.get("/{event_id}/summary")
-async def get_sale_summary(event_id: str):
-    summary = firestore_svc.get_full_event_summary(event_id)
+async def get_sale_summary(event_id: str, _ = Depends(validate_sale_owner)):
+    summary = firestore_svc.get_full_event_summary(event_id) # Validated via dependency
     if not summary:
         raise HTTPException(status_code=404, detail="Sale not found")
     
@@ -67,28 +68,28 @@ async def get_sale_summary(event_id: str):
     return summary
 
 @router.get("/{event_id}/status")
-async def get_status(event_id: str):
-    event = firestore_svc.get_sale_event(event_id)
+async def get_status(event_id: str, event: dict = Depends(validate_sale_owner)):
     if not event:
         raise HTTPException(status_code=404, detail="Sale Event not found")
     return {"status": event.get("status", SaleStatus.PENDING_UPLOAD)}
 
 @router.websocket("/{event_id}/ws")
-async def status_websocket(websocket: WebSocket, event_id: str):
+async def status_websocket(
+    websocket: WebSocket, 
+    event_id: str,
+    event: dict = Depends(validate_sale_owner)
+):
     """
     Real-time status updates via WebSocket.
     The client connects here to be notified when the pipeline finishes.
     """
     await notifier.connect(event_id, websocket)
     try:
-        # State Sync on Connect: Send the current status immediately
-        # This prevents the client from being stuck if the event already fired.
-        current_event = firestore_svc.get_sale_event(event_id)
-        if current_event:
-            await websocket.send_json({
-                "status": current_event.get("status"),
-                "message": "Connected to status stream"
-            })
+        # State Sync on Connect: Use the event already fetched by validate_sale_owner
+        await websocket.send_json({
+            "status": event.get("status"),
+            "message": "Connected to status stream"
+        })
             
         # Keep connection open until client disconnects
         while True:
@@ -101,14 +102,22 @@ async def status_websocket(websocket: WebSocket, event_id: str):
 # --- STATE TRANSITIONS ---
 
 @router.post("/{event_id}/estimate")
-async def trigger_reestimation(event_id: str, background_tasks: BackgroundTasks):
+async def trigger_reestimation(
+    event_id: str, 
+    background_tasks: BackgroundTasks,
+    _ = Depends(validate_sale_owner)
+):
     firestore_svc.transition_sale_status(event_id, SaleStatus.PRICING_IN_PROGRESS)
     background_tasks.add_task(run_pricing_pipeline, event_id)
     return {"status": SaleStatus.PRICING_IN_PROGRESS}
 
 @router.post("/{event_id}/publish")
-async def publish_sale(event_id: str, payload: SalePublishRequest):
-    summary = firestore_svc.get_full_event_summary(event_id)
+async def publish_sale(
+    event_id: str, 
+    payload: SalePublishRequest,
+    _ = Depends(validate_sale_owner)
+):
+    summary = firestore_svc.get_full_event_summary(event_id) # Scoped
     if not summary:
         raise HTTPException(status_code=404, detail="Sale not found")
 
@@ -128,9 +137,8 @@ async def publish_sale(event_id: str, payload: SalePublishRequest):
     return {"status": SaleStatus.LIVE}
 
 @router.post("/{event_id}/unpublish")
-async def unpublish_sale(event_id: str):
-    event = firestore_svc.get_sale_event(event_id)
-    if not event or event['status'] not in [SaleStatus.LIVE, SaleStatus.PARTIALLY_SOLD]:
+async def unpublish_sale(event_id: str, event: dict = Depends(validate_sale_owner)):
+    if event['status'] not in [SaleStatus.LIVE, SaleStatus.PARTIALLY_SOLD]:
         raise HTTPException(status_code=400, detail="Sale is not currently active.")
     
     firestore_svc.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)

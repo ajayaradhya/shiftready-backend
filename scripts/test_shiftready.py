@@ -13,11 +13,14 @@ WS_BASE_URL = "ws://127.0.0.1:8000/api/v1"
 VIDEO_FILE = "test_video.mp4"
 USER_ID = "ajay_dev_test"
 
+# Authentication header for local testing
+AUTH_HEADERS = {"X-User-ID": USER_ID}
+
 def wait_for_notification(event_id, target_status):
     """
     🔌 WebSocket Client: Listens for the server to push a status update.
     """
-    ws_url = f"{WS_BASE_URL}/sales/{event_id}/ws"
+    ws_url = f"{WS_BASE_URL}/sales/{event_id}/ws?token={USER_ID}"
     print(f"🔌 Connecting to WebSocket: {ws_url}")
     ws = create_connection(ws_url, timeout=60) # Fail if no message in 60s
     try:
@@ -36,7 +39,7 @@ def wait_for_notification(event_id, target_status):
         ws.close()
 
 def get_inventory_item(event_id):
-    summary = requests.get(f"{API_BASE_URL}/sales/{event_id}/summary").json()
+    summary = requests.get(f"{API_BASE_URL}/sales/{event_id}/summary", headers=AUTH_HEADERS).json()
     if not summary.get("bundles"):
         return None, None, None
     bundle = random.choice(summary["bundles"])
@@ -47,14 +50,18 @@ def run_extraction_stage():
     """Stage 1: AI Visual Extraction"""
     print("\n🚀 STAGE 1: AI Visual Extraction")
     print("-----------------------------------")
-    init_res = requests.post(f"{API_BASE_URL}/sales/init", json={"user_id": USER_ID, "filename": VIDEO_FILE}).json()
+    init_res = requests.post(
+        f"{API_BASE_URL}/sales/init", 
+        json={"filename": VIDEO_FILE}, # USER_ID is now in header
+        headers=AUTH_HEADERS
+    ).json()
     event_id, upload_url = init_res["event_id"], init_res["upload_url"]
 
     print(f"📤 Uploading {VIDEO_FILE}...")
     with open(VIDEO_FILE, "rb") as f:
         requests.put(upload_url, data=f, headers={"Content-Type": "video/mp4"})
     
-    requests.post(f"{API_BASE_URL}/sales/{event_id}/process")
+    requests.post(f"{API_BASE_URL}/sales/{event_id}/process", headers=AUTH_HEADERS)
     if wait_for_notification(event_id, "ready_for_review"):
         _, _, item = get_inventory_item(event_id)
         print(f"✅ Extraction Complete! AI found a [{item['name']}]")
@@ -77,7 +84,11 @@ def run_human_correction_stage(event_id):
         "actual_year_of_purchase": 2023,
         "condition": "Like-New"
     }
-    requests.patch(f"{API_BASE_URL}/sales/{event_id}/bundles/{b_id}/items/{i_id}", json=updates)
+    requests.patch(
+        f"{API_BASE_URL}/sales/{event_id}/bundles/{b_id}/items/{i_id}", 
+        json=updates,
+        headers=AUTH_HEADERS
+    )
     print("✅ User 'Ground Truth' saved to actual_* fields.")
 
 def run_estimation_stage(event_id):
@@ -85,7 +96,7 @@ def run_estimation_stage(event_id):
     print("\n🧠 STAGE 3: AI Market Pricing")
     print("-----------------------------------")
     print("Triggering LLM expert analysis based on human-verified facts...")
-    requests.post(f"{API_BASE_URL}/sales/{event_id}/estimate")
+    requests.post(f"{API_BASE_URL}/sales/{event_id}/estimate", headers=AUTH_HEADERS)
     
     if wait_for_notification(event_id, "ready_for_review"):
         _, _, item = get_inventory_item(event_id)
@@ -101,14 +112,18 @@ def run_publish_stage(event_id):
     final_price = item.get('predicted_listing_price', 0) - 10 # Let's haggle
     print(f"📝 Finalizing {item['name']} price at ${final_price}...")
     
-    requests.patch(f"{API_BASE_URL}/sales/{event_id}/bundles/{b_id}/items/{i_id}", 
-                   json={"actual_listing_price": final_price})
+    requests.patch(
+        f"{API_BASE_URL}/sales/{event_id}/bundles/{b_id}/items/{i_id}", 
+        json={"actual_listing_price": final_price},
+        headers=AUTH_HEADERS
+    )
     
     payload = {"move_out_date": "2026-05-22"}
     
     res = requests.post(
         f"{API_BASE_URL}/sales/{event_id}/publish", 
-        json=payload
+        json=payload,
+        headers=AUTH_HEADERS
     ).json()
     
     print(f"🎉 SUCCESS: Sale status is now {res.get('status')}")
