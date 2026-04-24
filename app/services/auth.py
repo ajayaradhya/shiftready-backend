@@ -7,6 +7,8 @@ from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 from typing import Optional
 
+from app.services import firestore_svc
+
 # Initialize Firebase Admin SDK
 # In Cloud Run, it automatically uses the default service account credentials.
 if not firebase_admin._apps:
@@ -47,7 +49,6 @@ async def get_current_user(
     # Allow mock tokens for local integration testing (scripts/test_shiftready.py)
     # We only allow this if NOT running in Cloud Run (detected via K_SERVICE env var)
     if not os.getenv("K_SERVICE") and id_token.startswith("dev_"):
-        from app.services import firestore_svc
         user = User(id=id_token, email=f"{id_token}@shiftready.test", name="Dev User")
         firestore_svc.upsert_user(user.id, user.email, user.name)
         return user
@@ -61,7 +62,6 @@ async def get_current_user(
             name=decoded_token.get('name')
         )
         # Synchronize user profile in Firestore background
-        from app.services import firestore_svc
         firestore_svc.upsert_user(user.id, user.email, user.name)
         return user
     except Exception as e:
