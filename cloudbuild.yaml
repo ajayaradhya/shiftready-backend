@@ -1,4 +1,16 @@
 steps:
+  # 0. Quality Gate: Run Smoke Tests & Import Checks
+  # This ensures the app boots and passes high-level tests before building the image.
+  - name: 'python:3.13-slim'
+    id: 'Test and Validate'
+    entrypoint: /bin/bash
+    args:
+      - -c
+      - |
+        pip install -r requirements.txt pytest httpx
+        python -m compileall app/
+        pytest tests/
+
   # 1. Build the container image
   - name: 'gcr.io/cloud-builders/docker'
     args: [
