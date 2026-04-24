@@ -8,8 +8,8 @@ from websocket import create_connection
 from datetime import datetime
 
 # Configuration
-API_BASE_URL = "http://127.0.0.1:8000/api/v1"
-WS_BASE_URL = "ws://127.0.0.1:8000/api/v1"
+API_BASE_URL = "http://127.0.0.1:8080/api/v1"
+WS_BASE_URL = "ws://127.0.0.1:8080/api/v1"
 VIDEO_FILE = "test_video.mp4"
 USER_ID = "ajay_dev_test"
 

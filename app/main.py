@@ -1,5 +1,6 @@
 import logging
 import time
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -63,5 +64,8 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    # Use 0.0.0.0 for Docker/Cloud Run compatibility
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    # Cloud Run injects the 'PORT' environment variable (defaults to 8080).
+    # We use that value, falling back to 8080 for local development.
+    port = int(os.getenv("PORT", 8080))
+    # We only enable reload if we are running locally (port 8080 is common in dev too).
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=(os.getenv("GCP_PROJECT_ID") is None))
