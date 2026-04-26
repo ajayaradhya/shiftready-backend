@@ -31,7 +31,7 @@ async def init_sale(
     gcs_uri = f"gs://{BUCKET_NAME}/{current_user.id}/{payload.filename}"
     
     # Initialize in Firestore
-    event_id = firestore_svc.create_sale_event(current_user.id, gcs_uri)
+    event_id = await firestore_svc.create_sale_event(current_user.id, gcs_uri)
     
     # Generate Signed URL for frontend PUT request
     upload_url = gcs_utils.generate_upload_url(BUCKET_NAME, f"{current_user.id}/{payload.filename}")
@@ -57,11 +57,11 @@ async def start_processing(
 
 @router.get("/")
 async def list_sales(current_user: User = Depends(get_current_user)):
-    return firestore_svc.list_all_sales(current_user.id)
+    return await firestore_svc.list_all_sales(current_user.id)
 
 @router.get("/{event_id}/summary")
 async def get_sale_summary(event_id: str, _ = Depends(validate_sale_owner)):
-    summary = firestore_svc.get_full_event_summary(event_id) # Validated via dependency
+    summary = await firestore_svc.get_full_event_summary(event_id) # Validated via dependency
     if not summary:
         raise HTTPException(status_code=404, detail="Sale not found")
     
@@ -112,7 +112,7 @@ async def trigger_reestimation(
     background_tasks: BackgroundTasks,
     _ = Depends(validate_sale_owner)
 ):
-    firestore_svc.transition_sale_status(event_id, SaleStatus.PRICING_IN_PROGRESS)
+    await firestore_svc.transition_sale_status(event_id, SaleStatus.PRICING_IN_PROGRESS)
     background_tasks.add_task(run_pricing_pipeline, event_id)
     return {"status": SaleStatus.PRICING_IN_PROGRESS}
 
@@ -122,7 +122,7 @@ async def publish_sale(
     payload: SalePublishRequest,
     _ = Depends(validate_sale_owner)
 ):
-    summary = firestore_svc.get_full_event_summary(event_id) # Scoped
+    summary = await firestore_svc.get_full_event_summary(event_id) # Scoped
     if not summary:
         raise HTTPException(status_code=404, detail="Sale not found")
 
@@ -130,15 +130,15 @@ async def publish_sale(
         for item in bundle['items']:
             if item.get('actual_listing_price') is None:
                 fallback = item.get('predicted_listing_price') or 0
-                firestore_svc.update_item_data(event_id, bundle['id'], item['id'], {"actual_listing_price": fallback})
+                await firestore_svc.update_item_data(event_id, bundle['id'], item['id'], {"actual_listing_price": fallback})
 
     # Move direct DB access to service layer
-    firestore_svc.update_sale_metadata(event_id, {
+    await firestore_svc.update_sale_metadata(event_id, {
         "moveOutDate": payload.move_out_date,
         "publishedAt": datetime.now()
     })
     
-    firestore_svc.transition_sale_status(event_id, SaleStatus.LIVE)
+    await firestore_svc.transition_sale_status(event_id, SaleStatus.LIVE)
     return {"status": SaleStatus.LIVE}
 
 @router.post("/{event_id}/unpublish")
@@ -146,30 +146,30 @@ async def unpublish_sale(event_id: str, event: dict = Depends(validate_sale_owne
     if event['status'] not in [SaleStatus.LIVE, SaleStatus.PARTIALLY_SOLD]:
         raise HTTPException(status_code=400, detail="Sale is not currently active.")
     
-    firestore_svc.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
+    await firestore_svc.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
     return {"status": SaleStatus.READY_FOR_REVIEW}
 
 # --- INVENTORY CRUD ---
 
 @router.post("/{event_id}/bundles")
 async def add_bundle(event_id: str, payload: BundleCreateRequest, _ = Depends(validate_sale_owner)):
-    bundle_id = firestore_svc.add_bundle(event_id, payload.name, 0)
+    bundle_id = await firestore_svc.add_bundle(event_id, payload.name, 0)
     return {"bundle_id": bundle_id}
 
 @router.delete("/{event_id}/bundles/{bundle_id}")
 async def remove_bundle(event_id: str, bundle_id: str, _ = Depends(validate_sale_owner)):
-    firestore_svc.delete_bundle(event_id, bundle_id)
+    await firestore_svc.delete_bundle(event_id, bundle_id)
     return {"status": "deleted"}
 
 @router.post("/{event_id}/bundles/{bundle_id}/items")
 async def add_manual_item(event_id: str, bundle_id: str, payload: ItemCreateRequest, _ = Depends(validate_sale_owner)):
-    item_id = firestore_svc.add_item_to_bundle(event_id, bundle_id, payload.dict())
-    firestore_svc.recalculate_bundle_total(event_id, bundle_id)
+    item_id = await firestore_svc.add_item_to_bundle(event_id, bundle_id, payload.dict())
+    await firestore_svc.recalculate_bundle_total(event_id, bundle_id)
     return {"item_id": item_id}
 
 @router.patch("/{event_id}/bundles/{bundle_id}/items/{item_id}")
 async def update_item(event_id: str, bundle_id: str, item_id: str, updates: Dict[str, Any], _ = Depends(validate_sale_owner)):
-    firestore_svc.update_item_data(event_id, bundle_id, item_id, updates)
+    await firestore_svc.update_item_data(event_id, bundle_id, item_id, updates)
     
     # Notify connected clients that an item has changed (Real-time sync)
     await notifier.notify_event(event_id, {
@@ -179,10 +179,10 @@ async def update_item(event_id: str, bundle_id: str, item_id: str, updates: Dict
     })
 
     if "actual_listing_price" in updates:
-        firestore_svc.recalculate_bundle_total(event_id, bundle_id)
+        await firestore_svc.recalculate_bundle_total(event_id, bundle_id)
     return {"status": "updated"}
 
 @router.delete("/{event_id}/bundles/{bundle_id}/items/{item_id}")
 async def remove_item(event_id: str, bundle_id: str, item_id: str, _ = Depends(validate_sale_owner)):
-    firestore_svc.delete_item(event_id, bundle_id, item_id)
+    await firestore_svc.delete_item(event_id, bundle_id, item_id)
     return {"status": "deleted"}

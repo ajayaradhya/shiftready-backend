@@ -10,25 +10,25 @@ async def run_extraction_pipeline(event_id: str, gcs_uri: str):
     """
     try:
         # 1. Update status to processing
-        firestore_svc.transition_sale_status(event_id, SaleStatus.PROCESSING)
+        await firestore_svc.transition_sale_status(event_id, SaleStatus.PROCESSING)
         
         # 2. Call Gemini Vision
-        bundles = gemini_processor.process_walkthrough(gcs_uri)
+        bundles = await gemini_processor.process_walkthrough(gcs_uri)
         
         # 3. Save results to Firestore hierarchy
         for b in bundles:
-            bundle_id = firestore_svc.add_bundle(event_id, b.bundle_name, 0)
+            bundle_id = await firestore_svc.add_bundle(event_id, b.bundle_name, 0)
             for item in b.items:
                 # Convert Pydantic model to dict for Firestore
                 item_data = item.model_dump() if hasattr(item, 'model_dump') else item.dict()
-                firestore_svc.add_item_to_bundle(event_id, bundle_id, item_data)
+                await firestore_svc.add_item_to_bundle(event_id, bundle_id, item_data)
         
         # 4. Move to Review stage
-        firestore_svc.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
+        await firestore_svc.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
         await notifier.notify_event(event_id, {"status": SaleStatus.READY_FOR_REVIEW, "message": "Extraction complete"})
     except Exception as e:
         print(f"Extraction Pipeline Failed: {e}")
-        firestore_svc.transition_sale_status(event_id, SaleStatus.FAILED)
+        await firestore_svc.transition_sale_status(event_id, SaleStatus.FAILED)
         await notifier.notify_event(event_id, {"status": SaleStatus.FAILED, "error": str(e)})
 
 async def run_pricing_pipeline(event_id: str):
@@ -37,7 +37,7 @@ async def run_pricing_pipeline(event_id: str):
     Analyzes verified inventory data against Sydney market trends.
     """
     try:
-        summary = firestore_svc.get_full_event_summary(event_id)
+        summary = await firestore_svc.get_full_event_summary(event_id)
         move_out_date = summary.get("moveOutDate") or datetime.now().strftime("%Y-%m-%d")
 
         context_items = []
@@ -55,23 +55,23 @@ async def run_pricing_pipeline(event_id: str):
                     "purchase_year": item.get('actual_year_of_purchase') or item.get('predicted_year_of_purchase')
                 })
 
-        priced_results = gemini_processor.estimate_listing_prices(context_items, move_out_date)
+        priced_results = await gemini_processor.estimate_listing_prices(context_items, move_out_date)
 
         for p in priced_results:
             item_id = p.get('id')
             bundle_id = item_to_bundle_map.get(item_id)
             if bundle_id:
-                firestore_svc.update_item_data(event_id, bundle_id, item_id, {
+                await firestore_svc.update_item_data(event_id, bundle_id, item_id, {
                     "predicted_listing_price": p.get('listing_price', 0),
                     "actual_listing_price": p.get('listing_price', 0),
                     "pricing_reasoning": p.get('reasoning', 'Market adjustment based on Sydney demand.')
                 })
         
         for bundle in summary['bundles']:
-            firestore_svc.recalculate_bundle_total(event_id, bundle['id'])
+            await firestore_svc.recalculate_bundle_total(event_id, bundle['id'])
 
-        firestore_svc.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
+        await firestore_svc.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
         await notifier.notify_event(event_id, {"status": SaleStatus.READY_FOR_REVIEW, "message": "Pricing complete"})
     except Exception as e:
-        firestore_svc.transition_sale_status(event_id, SaleStatus.FAILED)
+        await firestore_svc.transition_sale_status(event_id, SaleStatus.FAILED)
         await notifier.notify_event(event_id, {"status": SaleStatus.FAILED, "error": str(e)})

@@ -33,7 +33,7 @@ class GeminiProcessor:
         self.model_id = "gemini-3.1-flash-lite-preview"
         self.system_instruction = system_instruction
 
-    def process_walkthrough(self, gcs_uri: str) -> List[RoomBundle]:
+    async def process_walkthrough(self, gcs_uri: str) -> list[RoomBundle]:
         """
         Stage 1: Extraction & Temporal Anchoring.
         """
@@ -53,7 +53,7 @@ class GeminiProcessor:
 
         bundle_schema = self._get_clean_schema(RoomBundle)
         
-        response = self.client.models.generate_content(
+        response = await self.client.aio.models.generate_content(
             model=self.model_id,
             contents=[
                 types.Part.from_uri(file_uri=gcs_uri, mime_type="video/mp4"),
@@ -89,7 +89,7 @@ class GeminiProcessor:
             logger.error(f"Failed to parse walkthrough: {e}")
             raise e
 
-    def estimate_listing_prices(self, items: List[Dict[str, Any]], move_out_date: str) -> List[Dict[str, Any]]:
+    async def estimate_listing_prices(self, items: list[dict[str, Any]], move_out_date: str) -> list[dict[str, Any]]:
         """
         Stage 2: Sydney Market Analysis with Urgency Logic.
         """
@@ -125,7 +125,7 @@ class GeminiProcessor:
         - reasoning: (Short explanation including suburb demand)
         """
 
-        response = self.client.models.generate_content(
+        response = await self.client.aio.models.generate_content(
             model=self.model_id,
             contents=prompt,
             config=types.GenerateContentConfig(
@@ -143,7 +143,7 @@ class GeminiProcessor:
             logger.error(f"Pricing Error: {e}")
             return []
 
-    def _get_clean_schema(self, model) -> Dict[str, Any]:
+    def _get_clean_schema(self, model) -> dict[str, Any]:
         """
         Cleans Pydantic schemas for Gemini (No $refs, no NULLs).
         """

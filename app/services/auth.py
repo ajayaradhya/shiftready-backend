@@ -2,6 +2,7 @@ import os
 import firebase_admin
 from firebase_admin import auth, credentials
 from fastapi import Depends, HTTPException, status, Header, Query
+from fastapi.concurrency import run_in_threadpool
 from starlette.requests import HTTPConnection
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
@@ -50,19 +51,19 @@ async def get_current_user(
     # We only allow this if NOT running in Cloud Run (detected via K_SERVICE env var)
     if not os.getenv("K_SERVICE") and id_token.startswith("dev_"):
         user = User(id=id_token, email=f"{id_token}@shiftready.test", name="Dev User")
-        firestore_svc.upsert_user(user.id, user.email, user.name)
+        await firestore_svc.upsert_user(user.id, user.email, user.name)
         return user
 
     try:
-        # Verify the JWT against Firebase's public keys
-        decoded_token = auth.verify_id_token(id_token)
+        # Offload blocking Firebase SDK call to a threadpool
+        decoded_token = await run_in_threadpool(auth.verify_id_token, id_token)
         user = User(
             id=decoded_token['uid'],
             email=decoded_token.get('email', ''),
             name=decoded_token.get('name')
         )
         # Synchronize user profile in Firestore background
-        firestore_svc.upsert_user(user.id, user.email, user.name)
+        await firestore_svc.upsert_user(user.id, user.email, user.name)
         return user
     except Exception as e:
         raise HTTPException(
@@ -78,7 +79,7 @@ async def validate_sale_owner(
     Resource-level Authorization.
     Ensures the authenticated user is the 'sellerId' on the document.
     """
-    event = firestore_svc.get_sale_event(event_id)
+    event = await firestore_svc.get_sale_event(event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Sale Event not found")
     
