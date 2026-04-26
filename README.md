@@ -117,41 +117,51 @@ app/
 
 ---
 
-### 2. Clone & Environment
+### 2. Installation
 
 ```bash
-git clone <your-repo-url>
-cd project-backend
+git clone https://github.com/ajayaradhya/shiftready-backend.git
+cd shiftready-backend
 
+# Create and activate virtual environment
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+source .venv/bin/activate  # MacOS/Linux
+# .venv\Scripts\activate   # Windows
 
+# Install dependencies
 pip install -r requirements.txt
 ```
 
 ### 3. Environment Variables (.env)
 
-Create a .env file in the root directory:
+1. **Service Account**: Obtain the JSON key from the GCP Console (IAM > Service Accounts > Keys) and save it as `shiftready-backend-service-account.json` in the root.
+2. **Security**: Ensure this file is listed in your `.gitignore` to prevent accidental commits.
+3. **.env Setup**: Copy `.env.example` contents into `.env` file. Ask a developer for the contents. It should look like this:
 
 ```env
 GCP_PROJECT_ID=your-project-id
 GCP_UPLOAD_BUCKET=your-gcs-bucket-name
-GOOGLE_APPLICATION_CREDENTIALS=path/to/your/service-account.json
-PORT=8000
+GOOGLE_APPLICATION_CREDENTIALS=shiftready-backend-service-account.json
+PORT=8080
 ```
 
 ### 4. Running the Project
 Development Mode
 ```bash
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8080
 ```
 
 API Documentation
 
 ```text
-Swagger UI: http://localhost:8000/docs
+Swagger UI: http://localhost:8080/docs
 
-ReDoc: http://localhost:8000/redoc
+ReDoc: http://localhost:8080/redoc
+```
+
+Stopping the process
+```bash
+stop-process -id (get-nettcpconnection -localport 8080).owningprocess -force
 ```
 
 ## Sale Lifecycle (State Machine)
