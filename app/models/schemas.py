@@ -19,6 +19,10 @@ class SaleInitResponse(BaseModel):
 
 class SalePublishRequest(BaseModel):
     move_out_date: str
+    street_address: str
+    suburb: str
+    pincode: str
+    state: str = "NSW"
 
 # --- Bundle Schemas ---
 
@@ -41,6 +45,10 @@ class ItemBase(BaseModel):
     timestamp_label: str = "Manual Entry"
     video_timestamp: float = 0.0
     confidence: float = 1.0
+    dimensions: Optional[str] = None
+    material: Optional[str] = None
+    is_fragile: bool = False
+    disassembly_required: bool = False
 
 class ItemCreateRequest(BaseModel):
     """Used for adding manual assets the AI might have missed."""
@@ -53,6 +61,10 @@ class ItemCreateRequest(BaseModel):
     confidence: float = 1.0  # Manual items are 100% verified by default
     timestamp_label: str = "Manual Entry"
     video_timestamp: int = 0
+    dimensions: Optional[str] = None
+    material: Optional[str] = None
+    is_fragile: bool = False
+    disassembly_required: bool = False
 
 class ItemUpdate(BaseModel):
     """Strict schema for PATCH operations to avoid overwriting unrelated fields."""
@@ -62,6 +74,10 @@ class ItemUpdate(BaseModel):
     actual_original_price: Optional[float] = None
     actual_year_of_purchase: Optional[int] = None
     condition: Optional[str] = None
+    dimensions: Optional[str] = None
+    material: Optional[str] = None
+    is_fragile: Optional[bool] = None
+    disassembly_required: Optional[bool] = None
 
 # --- Response / Dashboard Schemas ---
 
@@ -88,6 +104,10 @@ class SaleStatusResponse(BaseModel):
     id: str
     status: SaleStatus
     sellerId: str
+    suburb: Optional[str] = None
+    street_address: Optional[str] = None
+    pincode: Optional[str] = None
+    state: Optional[str] = "NSW"
     createdAt: datetime
     itemCount: int = 0
     totalValue: float = 0.0

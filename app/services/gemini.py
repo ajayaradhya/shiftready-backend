@@ -47,6 +47,12 @@ class GeminiProcessor:
         DATING & PRICING:
         - Predict 'predicted_original_price' in AUD.
         - Predict 'predicted_year_of_purchase' based on design/ports (USB-C = 2020+).
+
+        PHYSICAL ATTRIBUTES (For Relocation):
+        - Estimate 'dimensions' (L x W x H in cm).
+        - Identify 'material' (e.g., 'Oak', 'Velvet', 'Stainless Steel').
+        - Flag 'is_fragile' (Boolean) and if 'disassembly_required' (Boolean).
+
         - IMPORTANT: Do not attempt to generate 'id' fields.
         """
 

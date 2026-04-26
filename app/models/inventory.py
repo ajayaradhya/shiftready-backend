@@ -20,11 +20,18 @@ class InventoryItem(BaseModel):
     
     predicted_listing_price: Optional[float] = None # AI market estimate
     actual_listing_price: Optional[float] = None # Final live price
+    pricing_reasoning: Optional[str] = None
 
     # Human-readable (e.g., "00:45")
     timestamp_label: Optional[str] = Field(None, description="Format MM:SS")
     # Machine-readable (e.g., 45.0)
     video_timestamp: Optional[float] = None
+
+    # --- Physical Attributes (For Relocation) ---
+    dimensions: Optional[str] = None
+    material: Optional[str] = None
+    is_fragile: bool = False
+    disassembly_required: bool = False
 
 class RoomBundle(BaseModel):
     id: Optional[str] = None

@@ -111,7 +111,7 @@ async def status_websocket(
 async def trigger_reestimation(
     event_id: str, 
     background_tasks: BackgroundTasks,
-    _ = Depends(validate_sale_owner)
+    event: dict = Depends(validate_sale_owner)
 ):
     await firestore_svc.transition_sale_status(event_id, SaleStatus.PRICING_IN_PROGRESS)
     background_tasks.add_task(run_pricing_pipeline, event_id)
@@ -143,6 +143,10 @@ async def publish_sale(
     # Move direct DB access to service layer
     await firestore_svc.update_sale_metadata(event_id, {
         "moveOutDate": payload.move_out_date,
+        "streetAddress": payload.street_address,
+        "suburb": payload.suburb,
+        "pincode": payload.pincode,
+        "state": payload.state,
         "publishedAt": datetime.now()
     })
     
