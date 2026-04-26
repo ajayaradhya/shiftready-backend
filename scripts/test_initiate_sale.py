@@ -1,30 +1,92 @@
 import argparse
+import os
+import sys
+import time
+import subprocess
+import signal
 import random
 import requests
 import json
 from websocket import create_connection
+from dotenv import load_dotenv
+
+# Add the project root to the Python path for app imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configuration
-API_BASE_URL = "http://127.0.0.1:8080/api/v1"
-WS_BASE_URL = "ws://127.0.0.1:8080/api/v1"
-VIDEO_FILE = "test_video.mp4"
+PROJECT_ID = os.getenv("GCP_PROJECT_ID", "shiftready-test-project")
+EMULATOR_HOST = "localhost:8089"
+API_PORT = 8080
+API_BASE_URL = f"http://127.0.0.1:{API_PORT}/api/v1"
+WS_BASE_URL = f"ws://127.0.0.1:{API_PORT}/api/v1"
+VIDEO_FILE = "scripts/test_video.mp4"
 USER_ID = "dev_ajay_2026"
 
 # Authentication header for local testing
 AUTH_HEADERS = {"Authorization": f"Bearer {USER_ID}"}
+
+# Set environment variables for the emulator
+os.environ["FIRESTORE_EMULATOR_HOST"] = EMULATOR_HOST
+os.environ["GCP_PROJECT_ID"] = PROJECT_ID
+if "GCP_UPLOAD_BUCKET" not in os.environ:
+    os.environ["GCP_UPLOAD_BUCKET"] = "test-bucket"
+
+def start_docker_emulator():
+    print("🐳 Starting Firestore Emulator via Docker...")
+    # Cleanup existing container if any
+    subprocess.run(["docker", "rm", "-f", "sr-firestore-emulator"], capture_output=True)
+    
+    cmd = [
+        "docker", "run", "-d",
+        "--name", "sr-firestore-emulator",
+        "-p", "8089:8089",
+        "google/cloud-sdk:emulators",
+        "gcloud", "beta", "emulators", "firestore", "start", "--host-port=0.0.0.0:8089"
+    ]
+    subprocess.run(cmd, check=True)
+    
+    # Wait for emulator to be ready
+    print("⏳ Waiting for emulator to initialize...")
+    for _ in range(15):
+        try:
+            requests.get(f"http://{EMULATOR_HOST}")
+            break
+        except:
+            time.sleep(2)
+    print("✅ Emulator is live.")
+
+def stop_docker_emulator():
+    print("🗑️  Cleaning up Docker...")
+    subprocess.run(["docker", "stop", "sr-firestore-emulator"], capture_output=True)
+
+def kill_process(proc):
+    if not proc:
+        return
+    print("🛑 Shutting down server...")
+    if os.name == 'nt':
+        subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)], capture_output=True)
+    else:
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
 
 def wait_for_notification(ws, target_status):
     """
     🔌 Listens on an EXISTING WebSocket for a specific status.
     """
     while True:
-        message = ws.recv()
-        data = json.loads(message)
-        msg_type = data.get("type", "STATUS_UPDATE")
-        
-        if msg_type == "ITEM_UPDATED":
-            print(f"   [WS Real-time]: Item {data['item_id']} was just updated!")
-            continue
+        try:
+            message = ws.recv()
+            data = json.loads(message)
+            msg_type = data.get("type", "STATUS_UPDATE")
+            
+            if msg_type == "ITEM_UPDATED":
+                print(f"   [WS Real-time]: Item {data['item_id']} was just updated!")
+                continue
+        except Exception as e:
+            print(f"❌ WS Error: {e}")
+            return False
 
         status = data.get("status")
         print(f"   [WS Notification]: {status} - {data.get('message', '')}")
@@ -151,16 +213,39 @@ if __name__ == "__main__":
     parser.add_argument("--id", help="Event ID required for all modes except 'full' and 'extract'")
     args = parser.parse_args()
 
-    if args.mode == "full":
-        eid, ws = run_extraction_stage()
-        if eid and ws:
-            run_human_correction_stage(eid)
-            run_estimation_stage(eid, ws)
-            run_publish_stage(eid)
-            ws.close()
-    elif args.mode == "extract":
-        run_extraction_stage()
-    elif args.mode == "correct":
+    server_proc = None
+    try:
+        if args.mode in ["full", "extract"]:
+            start_docker_emulator()
+            
+            print(f"🚀 Starting FastAPI Server on port {API_PORT}...")
+            server_proc = subprocess.Popen(
+                ["uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(API_PORT)],
+                env={**os.environ, "PYTHONPATH": "."}
+            )
+            time.sleep(5) # Give the server time to bind
+
+        if args.mode == "full":
+            eid, ws = run_extraction_stage()
+            if eid and ws:
+                run_human_correction_stage(eid)
+                run_estimation_stage(eid, ws)
+                run_publish_stage(eid)
+                ws.close()
+                print("\n🎉 FULL RELOCATION PIPELINE SUCCESSFUL!")
+        elif args.mode == "extract":
+            run_extraction_stage()
+            # Leave it running for manual inspection if needed or exit
+        
+    except Exception as e:
+        print(f"❌ Test Execution Failed: {e}")
+    finally:
+        kill_process(server_proc)
+        if args.mode in ["full", "extract"]:
+            stop_docker_emulator()
+
+    # Handling standalone modes that assume an external server/DB
+    if args.mode == "correct":
         run_human_correction_stage(args.id)
     elif args.mode == "estimate":
         run_estimation_stage(args.id)

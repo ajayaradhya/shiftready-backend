@@ -5,23 +5,28 @@ import subprocess
 import requests
 import json
 import signal
+from dotenv import load_dotenv
 
 # Add the project root to the Python path so we can import from the 'app' directory
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Load environment variables from .env file
+load_dotenv()
 
 from app.models.schemas import SaleStatus
 from google.cloud import firestore
 
 # --- Configuration ---
-PROJECT_ID = "shiftready-test-project"
-EMULATOR_HOST = "localhost:8089"
+PROJECT_ID = os.getenv("GCP_PROJECT_ID", "shiftready-test-project")
+EMULATOR_HOST = "127.0.0.1:8089"
 API_PORT = 8000
-API_URL = f"http://localhost:{API_PORT}/api/v1/marketplace"
+API_URL = f"http://127.0.0.1:{API_PORT}/api/v1/marketplace"
 
 # Set environment variables so the seed client and the future server use the emulator
 os.environ["FIRESTORE_EMULATOR_HOST"] = EMULATOR_HOST
 os.environ["GCP_PROJECT_ID"] = PROJECT_ID
-os.environ["GCP_UPLOAD_BUCKET"] = "test-bucket"
+if "GCP_UPLOAD_BUCKET" not in os.environ:
+    os.environ["GCP_UPLOAD_BUCKET"] = "test-bucket"
 
 def start_docker_emulator():
     print("🐳 Starting Firestore Emulator via Docker...")
@@ -37,13 +42,27 @@ def start_docker_emulator():
     subprocess.run(cmd, check=True)
     
     # Wait for emulator to be ready
-    for _ in range(10):
+    print("⏳ Waiting for emulator to initialize...")
+    for _ in range(15):
         try:
             requests.get(f"http://{EMULATOR_HOST}")
             break
         except:
             time.sleep(2)
     print("✅ Emulator is live.")
+
+def stop_docker_emulator():
+    print("🗑️  Cleaning up Docker...")
+    subprocess.run(["docker", "stop", "sr-firestore-emulator"], capture_output=True)
+
+def kill_process(proc):
+    if not proc:
+        return
+    print("🛑 Shutting down server...")
+    if os.name == 'nt':
+        subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)], capture_output=True)
+    else:
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
 
 def seed_marketplace_data():
     print("🌱 Seeding Firestore with LIVE sale data...")
@@ -152,7 +171,7 @@ if __name__ == "__main__":
         
         print(f"🚀 Starting FastAPI Server on port {API_PORT}...")
         server_proc = subprocess.Popen(
-            ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", str(API_PORT)],
+            ["uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(API_PORT)],
             env={**os.environ, "PYTHONPATH": "."}
         )
         time.sleep(5) # Give uvicorn a moment to bind
@@ -163,12 +182,5 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"❌ Testing Failed: {e}")
     finally:
-        if server_proc:
-            print("🛑 Shutting down server...")
-            if os.name == 'nt':
-                subprocess.run(['taskkill', '/F', '/T', '/PID', str(server_proc.pid)])
-            else:
-                os.killpg(os.getpgid(server_proc.pid), signal.SIGTERM)
-        
-        print("🗑️  Cleaning up Docker...")
-        subprocess.run(["docker", "stop", "sr-firestore-emulator"], capture_output=True)
+        kill_process(server_proc)
+        stop_docker_emulator()
