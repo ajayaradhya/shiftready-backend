@@ -26,12 +26,16 @@ async def run_extraction_pipeline(event_id: str, gcs_uri: str, max_retries: int 
         for attempt in range(max_retries + 1):
             try:
                 bundles = await gemini_processor.process_walkthrough(gcs_uri)
-                break
+                if bundles: break
+                logger.warning(f"⚠️ Extraction attempt {attempt + 1} returned no items for {event_id}. Retrying...")
             except Exception as e:
                 if attempt == max_retries: raise
                 logger.warning(f"⚠️ Extraction attempt {attempt + 1} failed for {event_id}: {e}. Retrying...")
                 await asyncio.sleep(2 ** attempt) # Exponential backoff
         
+        if not bundles:
+            raise ValueError("AI Extraction failed to return any items after retries")
+
         # 3. Save results to Firestore hierarchy
         for b in bundles:
             bundle_id = await firestore_svc.add_bundle(event_id, b.bundle_name, 0)
@@ -84,11 +88,15 @@ async def run_pricing_pipeline(event_id: str, max_retries: int = 2):
         for attempt in range(max_retries + 1):
             try:
                 priced_results = await gemini_processor.estimate_listing_prices(context_items, move_out_date)
-                break
+                if priced_results: break
+                logger.warning(f"⚠️ Pricing attempt {attempt + 1} returned no results for {event_id}. Retrying...")
             except Exception as e:
                 if attempt == max_retries: raise
                 logger.warning(f"⚠️ Pricing attempt {attempt + 1} failed for {event_id}: {e}. Retrying...")
                 await asyncio.sleep(2 ** attempt)
+
+        if not priced_results:
+            raise ValueError("AI Pricing failed to generate results after retries")
 
         for p in priced_results:
             item_id = p.get('id')

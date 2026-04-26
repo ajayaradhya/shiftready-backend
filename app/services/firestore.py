@@ -184,7 +184,11 @@ class FirestoreService:
         items = bundle_ref.collection("items").stream()
         total = 0
         async for i in items:
-            total += i.to_dict().get("actual_listing_price", 0)
+            price = i.to_dict().get("actual_listing_price", 0)
+            try:
+                total += float(price or 0)
+            except (ValueError, TypeError):
+                continue # Skip invalid numeric data to prevent aggregate failure
         
         await bundle_ref.update({
             "suggestedPrice": total,

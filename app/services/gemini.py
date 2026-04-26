@@ -76,7 +76,8 @@ class GeminiProcessor:
 
         try:
             # Safer parsing for 2026 SDK
-            raw_data = response.parsed if hasattr(response, 'parsed') else json.loads(response.text)
+            parsed = response.parsed if hasattr(response, 'parsed') else json.loads(response.text)
+            raw_data = parsed if parsed is not None else []
             bundles = []
             for b_data in raw_data:
                 for item in b_data.get("items", []):
@@ -145,7 +146,8 @@ class GeminiProcessor:
         )
 
         try:
-            return response.parsed if hasattr(response, 'parsed') else json.loads(response.text)
+            parsed = response.parsed if hasattr(response, 'parsed') else json.loads(response.text)
+            return parsed if parsed is not None else []
         except Exception as e:
             logger.error(f"Pricing Error: {e}")
             return []

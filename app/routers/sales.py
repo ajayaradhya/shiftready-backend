@@ -184,6 +184,13 @@ async def add_manual_item(event_id: str, bundle_id: str, payload: ItemCreateRequ
 
 @router.patch("/{event_id}/bundles/{bundle_id}/items/{item_id}")
 async def update_item(event_id: str, bundle_id: str, item_id: str, updates: Dict[str, Any], _ = Depends(validate_sale_owner)):
+    # Basic validation for numeric fields to prevent DB corruption and 500 errors
+    if "actual_listing_price" in updates and updates["actual_listing_price"] is not None:
+        try:
+            updates["actual_listing_price"] = float(updates["actual_listing_price"])
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=422, detail="actual_listing_price must be a numeric value")
+
     await firestore_svc.update_item_data(event_id, bundle_id, item_id, updates)
     
     # Notify connected clients that an item has changed (Real-time sync)

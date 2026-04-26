@@ -64,6 +64,17 @@ def kill_process(proc):
     else:
         os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
 
+def check_server_health():
+    print("🩺 Checking server health...")
+    for _ in range(10):
+        try:
+            res = requests.get(f"http://127.0.0.1:{API_PORT}/health")
+            if res.status_code == 200:
+                return True
+        except:
+            time.sleep(1)
+    return False
+
 def seed_marketplace_data():
     print("🌱 Seeding Firestore with LIVE sale data...")
     db = firestore.Client(project=PROJECT_ID)
@@ -174,13 +185,17 @@ if __name__ == "__main__":
             ["uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(API_PORT)],
             env={**os.environ, "PYTHONPATH": "."}
         )
-        time.sleep(5) # Give uvicorn a moment to bind
+
+        if not check_server_health():
+            print("❌ Server failed to start in time.")
+            sys.exit(1)
         
         run_tests(eid, bid, iid)
         print("\n🎉 ALL MARKETPLACE TESTS PASSED!")
 
     except Exception as e:
         print(f"❌ Testing Failed: {e}")
+        sys.exit(1)
     finally:
         kill_process(server_proc)
         stop_docker_emulator()

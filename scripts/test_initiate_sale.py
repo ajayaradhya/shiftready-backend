@@ -147,6 +147,8 @@ def run_extraction_stage(video_path):
         print(f"   Physicals: {item.get('material', 'N/A')} | {item.get('dimensions', 'N/A')}")
         print(f"   AI Predicted Year: {item['predicted_year_of_purchase']}")
         return event_id, ws # <--- Return the ws object
+    
+    print("❌ Extraction Stage failed via AI Pipeline.")
     ws.close() # <--- Close the websocket if the stage fails
     return None, None # <--- Return None for ws if failed
 
@@ -178,16 +180,20 @@ def run_estimation_stage(event_id, ws):
     print("\n🧠 STAGE 3: AI Market Pricing")
     print("-----------------------------------")
     print("Triggering LLM expert analysis based on human-verified facts...")
-    requests.post(
+    res = requests.post(
         f"{API_BASE_URL}/sales/{event_id}/estimate", 
         json={"move_out_date": "2026-05-22"},
         headers=AUTH_HEADERS
     )
+    if res.status_code != 200:
+        raise RuntimeError(f"Failed to trigger estimation: {res.text}")
     
     if wait_for_notification(ws, "ready_for_review"):
         _, _, item = get_inventory_item(event_id)
         print(f"✅ AI Suggested Listing Price: ${item.get('predicted_listing_price')}")
         print(f"   AI Reasoning: {item.get('pricing_reasoning')}")
+    else:
+        raise RuntimeError("AI Estimation stage failed via WebSocket notification.")
 
 def run_publish_stage(event_id):
     """Stage 4: Final Polish & Publish"""
@@ -217,8 +223,28 @@ def run_publish_stage(event_id):
         json=payload,
         headers=AUTH_HEADERS
     ).json()
+    if res.get("status") != "live":
+        raise RuntimeError(f"Publish stage failed. Expected status 'live', got '{res.get('status')}'")
     
     print(f"🎉 SUCCESS: Sale status is now {res.get('status')}")
+
+def run_marketplace_verification(event_id):
+    """Stage 5: Marketplace Visibility Check"""
+    print("\n🌐 STAGE 5: Marketplace Visibility")
+    print("-----------------------------------")
+    # We search by the suburb used in Stage 4 (Waterloo)
+    res = requests.get(f"{API_BASE_URL}/marketplace/search", params={"suburb": "Waterloo"})
+    if res.status_code != 200:
+        raise RuntimeError(f"Marketplace search failed: {res.text}")
+        
+    items = res.json().get("items", [])
+    match = next((i for i in items if i.get("eventId") == event_id), None)
+    
+    if match:
+        print(f"✅ Success! Item '{match['name']}' found in Marketplace search results.")
+        print(f"   Listing Price: ${match['price']}")
+    else:
+        raise RuntimeError(f"Marketplace verification failed. Sale {event_id} is not visible in search results.")
 
 def run_security_tests(event_id):
     """Production Scenario: Multi-tenant Isolation"""
@@ -245,7 +271,7 @@ def run_security_tests(event_id):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ShiftReady Production-Test CLI")
-    parser.add_argument("--mode", choices=["full", "extract", "correct", "estimate", "publish", "security"], 
+    parser.add_argument("--mode", choices=["full", "extract", "correct", "estimate", "publish", "security", "marketplace"], 
                         default="full", help="Test mode (default: full)")
     parser.add_argument("--video", default="scripts/test_video.mp4", help="Path to mp4 walkthrough")
     parser.add_argument("--id", help="Event ID required for all modes except 'full' and 'extract'")
@@ -254,7 +280,7 @@ if __name__ == "__main__":
 
     server_proc = None
     try:
-        if args.mode in ["full", "extract"]:
+        if args.mode in ["full", "extract", "security", "marketplace"]:
             start_docker_emulator()
             
             print(f"🚀 Starting FastAPI Server on port {API_PORT}...")
@@ -273,11 +299,15 @@ if __name__ == "__main__":
                 run_human_correction_stage(eid)
                 run_estimation_stage(eid, ws)
                 run_publish_stage(eid)
+                run_marketplace_verification(eid)
                 print(f"\n✨ Test Complete. Event ID: {eid}")
                 ws.close()
                 print("\n🎉 FULL RELOCATION PIPELINE SUCCESSFUL!")
+            else:
+                print("❌ Pipeline aborted: Extraction stage failed.")
+                sys.exit(1)
         elif args.mode == "extract":
-            run_extraction_stage()
+            run_extraction_stage(args.video)
             # Leave it running for manual inspection if needed or exit
         
     except Exception as e:
@@ -296,3 +326,5 @@ if __name__ == "__main__":
         run_publish_stage(args.id)
     elif args.mode == "security":
         run_security_tests(args.id)
+    elif args.mode == "marketplace":
+        run_marketplace_verification(args.id)
