@@ -17,6 +17,9 @@ class SaleInitResponse(BaseModel):
     upload_url: str
     gcs_uri: str
 
+class PriceEstimationRequest(BaseModel):
+    move_out_date: str
+
 class SalePublishRequest(BaseModel):
     move_out_date: str
     street_address: str

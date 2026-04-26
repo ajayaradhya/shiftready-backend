@@ -4,7 +4,7 @@ from typing import Dict, Any
 from datetime import datetime
 
 from app.models.schemas import (
-    SaleInitRequest, SaleInitResponse, SalePublishRequest, 
+    SaleInitRequest, SaleInitResponse, SalePublishRequest, PriceEstimationRequest,
     BundleCreateRequest, ItemCreateRequest, SaleStatus
 )
 
@@ -110,9 +110,12 @@ async def status_websocket(
 @router.post("/{event_id}/estimate")
 async def trigger_reestimation(
     event_id: str, 
+    payload: PriceEstimationRequest,
     background_tasks: BackgroundTasks,
     event: dict = Depends(validate_sale_owner)
 ):
+    # Store the move-out date to improve AI pricing urgency analysis
+    await firestore_svc.update_sale_metadata(event_id, {"moveOutDate": payload.move_out_date})
     await firestore_svc.transition_sale_status(event_id, SaleStatus.PRICING_IN_PROGRESS)
     background_tasks.add_task(run_pricing_pipeline, event_id)
     return {"status": SaleStatus.PRICING_IN_PROGRESS}

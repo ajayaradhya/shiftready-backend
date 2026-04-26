@@ -103,7 +103,11 @@ def run_estimation_stage(event_id, ws):
     print("\n🧠 STAGE 3: AI Market Pricing")
     print("-----------------------------------")
     print("Triggering LLM expert analysis based on human-verified facts...")
-    requests.post(f"{API_BASE_URL}/sales/{event_id}/estimate", headers=AUTH_HEADERS)
+    requests.post(
+        f"{API_BASE_URL}/sales/{event_id}/estimate", 
+        json={"move_out_date": "2026-05-22"},
+        headers=AUTH_HEADERS
+    )
     
     if wait_for_notification(ws, "ready_for_review"):
         _, _, item = get_inventory_item(event_id)
