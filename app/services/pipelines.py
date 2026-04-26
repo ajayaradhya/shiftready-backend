@@ -1,7 +1,10 @@
+import logging
 from datetime import datetime
 from app.models.schemas import SaleStatus
 from app.services import firestore_svc, gemini_processor
 from app.services.notifier import notifier
+
+logger = logging.getLogger(__name__)
 
 async def run_extraction_pipeline(event_id: str, gcs_uri: str):
     """
@@ -27,7 +30,7 @@ async def run_extraction_pipeline(event_id: str, gcs_uri: str):
         await firestore_svc.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
         await notifier.notify_event(event_id, {"status": SaleStatus.READY_FOR_REVIEW, "message": "Extraction complete"})
     except Exception as e:
-        print(f"Extraction Pipeline Failed: {e}")
+        logger.exception(f"Extraction Pipeline Failed for event {event_id}")
         await firestore_svc.transition_sale_status(event_id, SaleStatus.FAILED)
         await notifier.notify_event(event_id, {"status": SaleStatus.FAILED, "error": str(e)})
 
@@ -73,5 +76,6 @@ async def run_pricing_pipeline(event_id: str):
         await firestore_svc.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
         await notifier.notify_event(event_id, {"status": SaleStatus.READY_FOR_REVIEW, "message": "Pricing complete"})
     except Exception as e:
+        logger.exception(f"Pricing Pipeline Failed for event {event_id}")
         await firestore_svc.transition_sale_status(event_id, SaleStatus.FAILED)
         await notifier.notify_event(event_id, {"status": SaleStatus.FAILED, "error": str(e)})

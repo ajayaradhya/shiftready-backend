@@ -6,12 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Internal Imports
 from app.routers import sales
+from app.utils.logging_config import setup_logging
 
-# Setup production-grade logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
+# Initialize Centralized Logging
+setup_logging()
 logger = logging.getLogger(__name__)
 
 # --- App Initialization ---
