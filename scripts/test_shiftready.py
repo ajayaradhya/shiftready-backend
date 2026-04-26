@@ -69,6 +69,7 @@ def run_extraction_stage():
         _, _, item = get_inventory_item(event_id)
         print(f"✅ Extraction Complete! AI found a [{item['name']}]")
         print(f"   AI Predicted Price: ${item['predicted_original_price']}")
+        print(f"   Physicals: {item.get('material', 'N/A')} | {item.get('dimensions', 'N/A')}")
         print(f"   AI Predicted Year: {item['predicted_year_of_purchase']}")
         return event_id, ws # <--- Return the ws object
     ws.close() # <--- Close the websocket if the stage fails
@@ -86,7 +87,9 @@ def run_human_correction_stage(event_id):
         "brand": "Koala (Premium)", 
         "actual_original_price": 1200.0,
         "actual_year_of_purchase": 2023,
-        "condition": "Like-New"
+        "condition": "Like-New",
+        "dimensions": "203 x 153 x 30 cm",
+        "is_fragile": False
     }
     requests.patch(
         f"{API_BASE_URL}/sales/{event_id}/bundles/{b_id}/items/{i_id}", 
@@ -105,6 +108,7 @@ def run_estimation_stage(event_id, ws):
     if wait_for_notification(ws, "ready_for_review"):
         _, _, item = get_inventory_item(event_id)
         print(f"✅ AI Suggested Listing Price: ${item.get('predicted_listing_price')}")
+        print(f"   AI Reasoning: {item.get('pricing_reasoning')}")
 
 def run_publish_stage(event_id):
     """Stage 4: Final Polish & Publish"""
@@ -122,7 +126,12 @@ def run_publish_stage(event_id):
         headers=AUTH_HEADERS
     )
     
-    payload = {"move_out_date": "2026-05-22"}
+    payload = {
+        "move_out_date": "2026-05-22",
+        "street_address": "123 O'Dea Ave",
+        "suburb": "Waterloo",
+        "pincode": "2017"
+    }
     
     res = requests.post(
         f"{API_BASE_URL}/sales/{event_id}/publish", 
