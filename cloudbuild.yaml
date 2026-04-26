@@ -1,7 +1,23 @@
+timeout: 1200s
+options:
+  logging: CLOUD_LOGGING
+  machineType: 'E2_HIGHCPU_8'
+
 steps:
-  # 1. Run Unit Tests with Coverage
+  # 1. Static Analysis (Linting)
+  - name: 'python:3.13-slim'
+    id: 'lint'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        pip install ruff
+        ruff check .
+
+  # 2. Run Unit Tests with Coverage
   - name: 'python:3.13-slim'
     id: 'run-tests'
+    waitFor: ['lint']
     entrypoint: 'bash'
     args:
       - '-c'
@@ -9,34 +25,53 @@ steps:
         pip install -r requirements-test.txt
         pytest
 
-  # 2. Build the Production Image (only if tests pass)
+  # 3. Pull the latest image for Docker layer caching
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'pull-cache'
+    entrypoint: 'bash'
+    args: ['-c', 'docker pull ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE_NAME}:latest || exit 0']
+
+  # 4. Build the Production Image
   - name: 'gcr.io/cloud-builders/docker'
     id: 'build-image'
-    args: ['build', '-t', 'australia-southeast1-docker.pkg.dev/$PROJECT_ID/shiftready-repo/backend-image:$SHORT_SHA', '.']
+    args: [
+      'build',
+      '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE_NAME}:$SHORT_SHA',
+      '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE_NAME}:latest',
+      '--cache-from', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE_NAME}:latest',
+      '.'
+    ]
 
-  # 3. Push to Artifact Registry
+  # 5. Push to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
     id: 'push-image'
-    args: ['push', 'australia-southeast1-docker.pkg.dev/$PROJECT_ID/shiftready-repo/backend-image:$SHORT_SHA']
+    args: ['push', '--all-tags', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE_NAME}']
 
-  # 4. Deploy to Cloud Run
+  # 6. Deploy to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'deploy'
     entrypoint: 'gcloud'
     args:
       - 'run'
       - 'deploy'
-      - 'shiftready-backend'
+      - '${_SERVICE_NAME}'
       - '--image'
-      - 'australia-southeast1-docker.pkg.dev/$PROJECT_ID/shiftready-repo/backend-image:$SHORT_SHA'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE_NAME}:$SHORT_SHA'
       - '--region'
-      - 'australia-southeast1'
+      - '${_REGION}'
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
 
 images:
-  - 'australia-southeast1-docker.pkg.dev/$PROJECT_ID/shiftready-repo/backend-image:$SHORT_SHA'
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE_NAME}:$SHORT_SHA'
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE_NAME}:latest'
 
 options:
-  logging: CLOUD_LOGGING
+  logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _REGION: australia-southeast1
+  _SERVICE_NAME: shiftready-backend
+  _REPOSITORY: shiftready-repo
+  _IMAGE_NAME: backend-image
