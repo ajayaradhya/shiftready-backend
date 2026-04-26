@@ -208,13 +208,16 @@ class FirestoreService:
             sales_query = sales_query.where(filter=firestore.FieldFilter("suburb", "==", suburb))
         
         live_sales = await sales_query.limit(20).get()
-        active_event_ids = [d.id for d in live_sales]
 
-        if not active_event_ids:
+        if not live_sales:
             return []
 
         results = []
-        for event_id in active_event_ids:
+        for sale_doc in live_sales:
+            event_id = sale_doc.id
+            sale_data = sale_doc.to_dict()
+            seller_id = sale_data.get("sellerId")
+            
             # Fetch bundles for these sales
             bundles = await self.db.collection("saleEvents").document(event_id).collection("bundles").get()
             for b in bundles:
@@ -231,6 +234,7 @@ class FirestoreService:
                         **item_data,
                         "id": i.id,
                         "bundleName": b_data.get("name"),
-                        "eventId": event_id
+                        "eventId": event_id,
+                        "sellerId": seller_id
                     })
         return results

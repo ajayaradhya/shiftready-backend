@@ -1,9 +1,15 @@
 import os
+import sys
 import time
 import subprocess
 import requests
 import json
 import signal
+
+# Add the project root to the Python path so we can import from the 'app' directory
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from app.models.schemas import SaleStatus
 from google.cloud import firestore
 
 # --- Configuration ---
@@ -43,80 +49,100 @@ def seed_marketplace_data():
     print("🌱 Seeding Firestore with LIVE sale data...")
     db = firestore.Client(project=PROJECT_ID)
     
-    # 1. Create a LIVE sale event in Waterloo
-    sale_ref = db.collection("saleEvents").document("test_event_123")
-    sale_ref.set({
+    # 1. LIVE Sale (Waterloo)
+    s1 = db.collection("saleEvents").document("event_waterloo")
+    s1.set({
         "sellerId": "dev_seller_ace",
-        "status": "live",
+        "status": SaleStatus.LIVE,
         "suburb": "Waterloo",
-        "streetAddress": "123 O'Dea Ave",
         "createdAt": firestore.SERVER_TIMESTAMP
     })
+    b1 = s1.collection("bundles").document("b1")
+    b1.set({"name": "Living Room"})
+    
+    # 2. LIVE Sale (Zetland) - Test multi-suburb
+    s2 = db.collection("saleEvents").document("event_zetland")
+    s2.set({
+        "sellerId": "dev_seller_bob",
+        "status": SaleStatus.LIVE,
+        "suburb": "Zetland",
+        "createdAt": firestore.SERVER_TIMESTAMP
+    })
+    b2 = s2.collection("bundles").document("b2")
+    b2.set({"name": "Bedroom"})
 
-    # 2. Add a Bundle
-    bundle_ref = sale_ref.collection("bundles").document("bundle_living_room")
-    bundle_ref.set({"name": "Living Room", "suggestedPrice": 500.0})
+    # 3. PENDING Sale (Hidden) - Should not appear in search
+    s3 = db.collection("saleEvents").document("event_hidden")
+    s3.set({
+        "sellerId": "dev_seller_ace",
+        "status": SaleStatus.READY_FOR_REVIEW,
+        "suburb": "Waterloo",
+        "createdAt": firestore.SERVER_TIMESTAMP
+    })
+    s3.collection("bundles").document("b3").collection("items").document("ghost").set({"name": "Invisible Chair"})
 
-    # 3. Add Items
+    # Add Items to Live Sales
     items = [
-        {
-            "id": "item_sofa",
-            "name": "Velvet Sofa",
-            "brand": "West Elm",
-            "condition": "Excellent",
-            "actual_listing_price": 450.0,
-            "actual_original_price": 1200.0,
-            "actual_year_of_purchase": 2023,
-            "confidence": 0.98
-        },
-        {
-            "id": "item_lamp",
-            "name": "Industrial Floor Lamp",
-            "brand": "IKEA",
-            "condition": "Good",
-            "actual_listing_price": 50.0,
-            "actual_original_price": 99.0,
-            "actual_year_of_purchase": 2021,
-            "confidence": 1.0
-        }
+        {"ref": b1, "id": "item_sofa", "name": "Velvet Sofa", "brand": "West Elm", "condition": "Excellent", "actual_listing_price": 450.0, "actual_original_price": 1200.0, "actual_year_of_purchase": 2023, "confidence": 0.98},
+        {"ref": b1, "id": "item_lamp", "name": "Industrial Lamp", "brand": "IKEA", "condition": "Good", "actual_listing_price": 50.0, "actual_original_price": 99.0, "actual_year_of_purchase": 2021, "confidence": 1.0},
+        {"ref": b2, "id": "item_bed", "name": "Queen Bed", "brand": "Koala", "condition": "New", "actual_listing_price": 800.0, "actual_original_price": 1500.0, "actual_year_of_purchase": 2024, "confidence": 0.95}
     ]
     
-    for item in items:
-        item_id = item.pop("id")
-        bundle_ref.collection("items").document(item_id).set(item)
+    for it in items:
+        ref, iid = it.pop("ref"), it.pop("id")
+        ref.collection("items").document(iid).set(it)
     
-    print("✅ Data seeded successfully.")
-    return "test_event_123", "bundle_living_room", "item_sofa"
+    print("✅ Data seeded: 2 Live Sales (Waterloo, Zetland), 1 Hidden Sale.")
+    return "event_waterloo", "b1", "item_sofa"
 
 def run_tests(event_id, bundle_id, item_id):
-    print("\n🔍 Running Marketplace API Tests...")
+    print("\n🔍 Running Comprehensive Marketplace API Tests...")
     
-    # Test 1: Anonymous Search
-    print("--- Test 1: Anonymous Search (Waterloo) ---")
+    # Test 1: Anonymous Search - Privacy Check
+    print("--- Test 1: Anonymous Privacy Masking ---")
     res = requests.get(f"{API_URL}/search", params={"suburb": "Waterloo"})
     data = res.json()
-    assert res.status_code == 200
-    assert data["count"] >= 1
-    # Verify masking (Anonymous users shouldn't see originalPrice)
+    assert data["count"] == 2
     assert data["items"][0]["metadata"]["originalPrice"] is None
-    print(f"✅ Found {data['count']} items. Privacy masking verified.")
+    print("✅ Anonymous users cannot see sensitive metadata.")
 
-    # Test 2: Authenticated Search
-    print("--- Test 2: Authenticated Search (Keyword: Velvet) ---")
-    headers = {"Authorization": "Bearer dev_tester_2026"}
-    res = requests.get(f"{API_URL}/search", params={"q": "Velvet"}, headers=headers)
-    data = res.json()
-    assert data["items"][0]["name"] == "Velvet Sofa"
-    # Authenticated users see premium metadata
-    assert data["items"][0]["metadata"]["year"] == 2023
-    print("✅ Keyword search and auth-metadata verified.")
+    # Test 2: Suburb Filtering
+    print("--- Test 2: Suburb Filtering (Zetland) ---")
+    res = requests.get(f"{API_URL}/search", params={"suburb": "Zetland"})
+    assert res.json()["count"] == 1
+    assert res.json()["items"][0]["name"] == "Queen Bed"
+    print("✅ Suburb filtering isolated Zetland inventory correctly.")
 
-    # Test 3: Item Detail
-    print(f"--- Test 3: Item Detail ({item_id}) ---")
+    # Test 3: Status Filtering (Security)
+    print("--- Test 3: Status Visibility ---")
+    res = requests.get(f"{API_URL}/search", params={"q": "Invisible"})
+    assert res.json()["count"] == 0
+    print("✅ Non-LIVE sales are correctly hidden from marketplace.")
+
+    # Test 4: Authenticated Owner View (Confidence Score)
+    print("--- Test 4: Owner-Only Metadata ---")
+    headers = {"Authorization": "Bearer dev_seller_ace"}
+    res = requests.get(f"{API_URL}/search", params={"q": "Sofa"}, headers=headers)
+    item = res.json()["items"][0]
+    assert item["metadata"]["confidence"] == 0.98
+    
+    headers_other = {"Authorization": "Bearer dev_buyer_99"}
+    res_other = requests.get(f"{API_URL}/search", params={"q": "Sofa"}, headers=headers_other)
+    assert res_other.json()["items"][0]["metadata"]["confidence"] is None
+    print("✅ Confidence scores only visible to the item owner.")
+
+    # Test 5: Keyword Matching (Case-Insensitive)
+    print("--- Test 5: Keyword Search (ikea vs IKEA) ---")
+    res = requests.get(f"{API_URL}/search", params={"q": "ikea"})
+    assert res.json()["count"] == 1
+    print("✅ Search is case-insensitive.")
+
+    # Test 6: Item Detail
+    print(f"--- Test 6: Item Detail Retrieval ---")
     res = requests.get(f"{API_URL}/items/{event_id}/{bundle_id}/{item_id}")
     assert res.status_code == 200
     assert res.json()["name"] == "Velvet Sofa"
-    print("✅ Item detail retrieval verified.")
+    print("✅ Full item detail path verified.")
 
 if __name__ == "__main__":
     server_proc = None

@@ -24,9 +24,9 @@ async def search_marketplace(
         
         processed_items.append({
             "id": item["id"],
-            "name": item["name"],
-            "brand": item["brand"],
-            "condition": item["condition"],
+            "name": item.get("name", "Unknown Item"),
+            "brand": item.get("brand", "Generic"),
+            "condition": item.get("condition", "Good"),
             "price": item.get("actual_listing_price"),
             "bundleName": item.get("bundleName"),
             "eventId": item.get("eventId"),
