@@ -22,13 +22,15 @@ EMULATOR_HOST = "localhost:8089"
 API_PORT = 8080
 API_BASE_URL = f"http://127.0.0.1:{API_PORT}/api/v1"
 WS_BASE_URL = f"ws://127.0.0.1:{API_PORT}/api/v1"
-VIDEO_FILE = "scripts/test_video.mp4"
 USER_ID = "dev_ajay_2026"
+OTHER_USER_ID = "dev_intruder_2026"
 
 # Authentication header for local testing
 AUTH_HEADERS = {"Authorization": f"Bearer {USER_ID}"}
+OTHER_AUTH_HEADERS = {"Authorization": f"Bearer {OTHER_USER_ID}"}
 
 # Set environment variables for the emulator
+os.environ["K_SERVICE"] = ""  # Force local dev mode for auth
 os.environ["FIRESTORE_EMULATOR_HOST"] = EMULATOR_HOST
 os.environ["GCP_PROJECT_ID"] = PROJECT_ID
 if "GCP_UPLOAD_BUCKET" not in os.environ:
@@ -71,6 +73,17 @@ def kill_process(proc):
     else:
         os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
 
+def check_server_health():
+    print("🩺 Checking server health...")
+    for _ in range(10):
+        try:
+            res = requests.get(f"http://127.0.0.1:{API_PORT}/health")
+            if res.status_code == 200:
+                return True
+        except:
+            time.sleep(1)
+    return False
+
 def wait_for_notification(ws, target_status):
     """
     🔌 Listens on an EXISTING WebSocket for a specific status.
@@ -109,19 +122,19 @@ def get_inventory_item(event_id):
     item = random.choice(bundle["items"])
     return bundle["id"], item["id"], item
 
-def run_extraction_stage():
+def run_extraction_stage(video_path):
     """Stage 1: AI Visual Extraction"""
     print("\n🚀 STAGE 1: AI Visual Extraction")
     print("-----------------------------------")
     init_res = requests.post(
         f"{API_BASE_URL}/sales/init", 
-        json={"filename": VIDEO_FILE}, # USER_ID is now in header
+        json={"filename": os.path.basename(video_path)}, 
         headers=AUTH_HEADERS
     ).json()
     event_id, upload_url = init_res["event_id"], init_res["upload_url"]
 
-    print(f"📤 Uploading {VIDEO_FILE}...")
-    with open(VIDEO_FILE, "rb") as f:
+    print(f"📤 Uploading {video_path}...")
+    with open(video_path, "rb") as f:
         requests.put(upload_url, data=f, headers={"Content-Type": "video/mp4"})
     
     requests.post(f"{API_BASE_URL}/sales/{event_id}/process", headers=AUTH_HEADERS)
@@ -207,10 +220,36 @@ def run_publish_stage(event_id):
     
     print(f"🎉 SUCCESS: Sale status is now {res.get('status')}")
 
+def run_security_tests(event_id):
+    """Production Scenario: Multi-tenant Isolation"""
+    print("\n🔐 SECURITY TEST: Ownership Enforcement")
+    print("-----------------------------------")
+    # Try to access Ajay's sale with Intruder's token
+    res = requests.get(f"{API_BASE_URL}/sales/{event_id}/summary", headers=OTHER_AUTH_HEADERS)
+    assert res.status_code == 403
+    print("✅ Correct! Intruder was denied access to private sale.")
+
+    # Try to patch an item with invalid data types (Production Edge Case)
+    print("📝 DATA INTEGRITY: Invalid Update Test")
+    b_id, i_id, _ = get_inventory_item(event_id)
+    res = requests.patch(
+        f"{API_BASE_URL}/sales/{event_id}/bundles/{b_id}/items/{i_id}",
+        json={"actual_listing_price": "FREE"}, # Should be float
+        headers=AUTH_HEADERS
+    )
+    # Depending on your Pydantic strictness, this might be 422 or handled gracefully
+    if res.status_code == 422:
+        print("✅ Validation caught malformed data.")
+    else:
+        print(f"ℹ️ Server handled malformed data with status {res.status_code}")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ShiftReady Production-Test CLI")
-    parser.add_argument("--mode", choices=["full", "extract", "correct", "estimate", "publish"], required=True)
+    parser.add_argument("--mode", choices=["full", "extract", "correct", "estimate", "publish", "security"], 
+                        default="full", help="Test mode (default: full)")
+    parser.add_argument("--video", default="scripts/test_video.mp4", help="Path to mp4 walkthrough")
     parser.add_argument("--id", help="Event ID required for all modes except 'full' and 'extract'")
+    
     args = parser.parse_args()
 
     server_proc = None
@@ -223,14 +262,18 @@ if __name__ == "__main__":
                 ["uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(API_PORT)],
                 env={**os.environ, "PYTHONPATH": "."}
             )
-            time.sleep(5) # Give the server time to bind
+            if not check_server_health():
+                print("❌ Server failed to start in time.")
+                sys.exit(1)
 
         if args.mode == "full":
-            eid, ws = run_extraction_stage()
+            eid, ws = run_extraction_stage(args.video)
             if eid and ws:
+                run_security_tests(eid)
                 run_human_correction_stage(eid)
                 run_estimation_stage(eid, ws)
                 run_publish_stage(eid)
+                print(f"\n✨ Test Complete. Event ID: {eid}")
                 ws.close()
                 print("\n🎉 FULL RELOCATION PIPELINE SUCCESSFUL!")
         elif args.mode == "extract":
@@ -251,3 +294,5 @@ if __name__ == "__main__":
         run_estimation_stage(args.id)
     elif args.mode == "publish":
         run_publish_stage(args.id)
+    elif args.mode == "security":
+        run_security_tests(args.id)
