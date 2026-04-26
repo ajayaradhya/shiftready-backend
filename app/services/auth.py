@@ -87,3 +87,13 @@ async def validate_sale_owner(
         raise HTTPException(status_code=403, detail="Access denied: You do not own this sale.")
         
     return event
+
+async def get_optional_user(
+    connection: HTTPConnection,
+    token: Optional[str] = Query(None)
+) -> Optional[User]:
+    """Allows viewing the marketplace anonymously while identifying logged-in users."""
+    try:
+        return await get_current_user(connection, token)
+    except HTTPException:
+        return None

@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from google.cloud import firestore
 from app.models.schemas import SaleStatus
 
@@ -191,3 +191,46 @@ class FirestoreService:
             "updatedAt": firestore.SERVER_TIMESTAMP
         })
         return total
+
+    # --- MARKETPLACE OPERATIONS ---
+
+    async def get_active_inventory(self, suburb: Optional[str] = None, query: Optional[str] = None):
+        """
+        Marketplace Search: Fetches items from LIVE sales.
+        Uses a Collection Group query to search 'items' across all sale events.
+        Note: Requires a Firestore index on 'items' collection with 'status' or similar.
+        """
+        # For MVP/Fast retrieval, we first find LIVE sale events
+        sales_query = self.db.collection("saleEvents").where("status", "==", SaleStatus.LIVE)
+        
+        if suburb:
+            # Sydney-centric suburb filtering
+            sales_query = sales_query.where("suburb", "==", suburb)
+        
+        live_sales = await sales_query.limit(20).get()
+        active_event_ids = [d.id for d in live_sales]
+
+        if not active_event_ids:
+            return []
+
+        results = []
+        for event_id in active_event_ids:
+            # Fetch bundles for these sales
+            bundles = await self.db.collection("saleEvents").document(event_id).collection("bundles").get()
+            for b in bundles:
+                b_data = b.to_dict()
+                items = await b.reference.collection("items").get()
+                for i in items:
+                    item_data = i.to_dict()
+                    # Basic keyword search on name/brand
+                    if query and query.lower() not in item_data.get('name', '').lower() and \
+                       query and query.lower() not in item_data.get('brand', '').lower():
+                        continue
+                        
+                    results.append({
+                        **item_data,
+                        "id": i.id,
+                        "bundleName": b_data.get("name"),
+                        "eventId": event_id
+                    })
+        return results

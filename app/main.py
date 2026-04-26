@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Internal Imports
-from app.routers import sales
+from app.routers import sales, marketplace
 from app.utils.logging_config import setup_logging
 
 # Initialize Centralized Logging
@@ -43,6 +43,7 @@ app.add_middleware(
 # Versioning the API at /api/v1 ensures we can scale features 
 # without breaking the current walkthrough flow.
 app.include_router(sales.router, prefix="/api/v1", tags=["Inventory & Sales"])
+app.include_router(marketplace.router, prefix="/api/v1")
 
 # --- Base Endpoints ---
 
