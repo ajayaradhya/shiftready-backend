@@ -73,7 +73,7 @@ class FirestoreService:
     async def list_all_sales(self, user_id: str):
         """Dashboard view: Minimal metadata for high-speed listing."""
         docs = self.db.collection("saleEvents") \
-                      .where("sellerId", "==", user_id) \
+                      .where(filter=firestore.FieldFilter("sellerId", "==", user_id)) \
                       .order_by("createdAt", direction="DESCENDING").stream()
         
         return [{**d.to_dict(), "id": d.id} async for d in docs]
@@ -201,11 +201,11 @@ class FirestoreService:
         Note: Requires a Firestore index on 'items' collection with 'status' or similar.
         """
         # For MVP/Fast retrieval, we first find LIVE sale events
-        sales_query = self.db.collection("saleEvents").where("status", "==", SaleStatus.LIVE)
+        sales_query = self.db.collection("saleEvents").where(filter=firestore.FieldFilter("status", "==", SaleStatus.LIVE))
         
         if suburb:
             # Sydney-centric suburb filtering
-            sales_query = sales_query.where("suburb", "==", suburb)
+            sales_query = sales_query.where(filter=firestore.FieldFilter("suburb", "==", suburb))
         
         live_sales = await sales_query.limit(20).get()
         active_event_ids = [d.id for d in live_sales]

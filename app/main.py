@@ -1,7 +1,7 @@
 import logging
 import time
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 # Internal Imports
@@ -38,6 +38,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    """
+    Centralized Performance Monitor.
+    Captures the duration of every API request and logs it.
+    """
+    start_time = time.perf_counter()
+    response = await call_next(request)
+    process_time = time.perf_counter() - start_time
+    
+    logger.info(f"🚀 {request.method} {request.url.path} | Status: {response.status_code} | Duration: {process_time:.4f}s")
+    
+    # Injecting the time into the response headers for easier frontend debugging
+    response.headers["X-Process-Time"] = f"{process_time:.4f}s"
+    return response
 
 # --- Router Inclusion ---
 # Versioning the API at /api/v1 ensures we can scale features 

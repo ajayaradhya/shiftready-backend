@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import time
 from datetime import datetime
 from app.models.schemas import SaleStatus
 from app.services import firestore_svc, gemini_processor
@@ -6,17 +8,29 @@ from app.services.notifier import notifier
 
 logger = logging.getLogger(__name__)
 
-async def run_extraction_pipeline(event_id: str, gcs_uri: str):
+async def run_extraction_pipeline(event_id: str, gcs_uri: str, max_retries: int = 2):
     """
     Stage 1: AI Vision Analysis.
     Extracts bundles and items from the GCS video walkthrough.
+    Includes timing, structural logging, and retry logic.
     """
+    start_time = time.perf_counter()
+    logger.info(f"🏗️ Starting Extraction Pipeline for event: {event_id}")
+    
     try:
         # 1. Update status to processing
         await firestore_svc.transition_sale_status(event_id, SaleStatus.PROCESSING)
         
-        # 2. Call Gemini Vision
-        bundles = await gemini_processor.process_walkthrough(gcs_uri)
+        # 2. Call Gemini Vision with internal retry for transient errors
+        bundles = None
+        for attempt in range(max_retries + 1):
+            try:
+                bundles = await gemini_processor.process_walkthrough(gcs_uri)
+                break
+            except Exception as e:
+                if attempt == max_retries: raise
+                logger.warning(f"⚠️ Extraction attempt {attempt + 1} failed for {event_id}: {e}. Retrying...")
+                await asyncio.sleep(2 ** attempt) # Exponential backoff
         
         # 3. Save results to Firestore hierarchy
         for b in bundles:
@@ -29,16 +43,23 @@ async def run_extraction_pipeline(event_id: str, gcs_uri: str):
         # 4. Move to Review stage
         await firestore_svc.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
         await notifier.notify_event(event_id, {"status": SaleStatus.READY_FOR_REVIEW, "message": "Extraction complete"})
+        
+        duration = time.perf_counter() - start_time
+        logger.info(f"✅ Extraction Pipeline Success | Event: {event_id} | Time: {duration:.2f}s")
+
     except Exception as e:
         logger.exception(f"Extraction Pipeline Failed for event {event_id}")
         await firestore_svc.transition_sale_status(event_id, SaleStatus.FAILED)
         await notifier.notify_event(event_id, {"status": SaleStatus.FAILED, "error": str(e)})
 
-async def run_pricing_pipeline(event_id: str):
+async def run_pricing_pipeline(event_id: str, max_retries: int = 2):
     """
     Stage 2: AI Pricing Analysis.
     Analyzes verified inventory data against Sydney market trends.
     """
+    start_time = time.perf_counter()
+    logger.info(f"💰 Starting Pricing Pipeline for event: {event_id}")
+
     try:
         summary = await firestore_svc.get_full_event_summary(event_id)
         move_out_date = summary.get("moveOutDate") or datetime.now().strftime("%Y-%m-%d")
@@ -58,7 +79,16 @@ async def run_pricing_pipeline(event_id: str):
                     "purchase_year": item.get('actual_year_of_purchase') or item.get('predicted_year_of_purchase')
                 })
 
-        priced_results = await gemini_processor.estimate_listing_prices(context_items, move_out_date)
+        # Call Gemini with retry logic
+        priced_results = []
+        for attempt in range(max_retries + 1):
+            try:
+                priced_results = await gemini_processor.estimate_listing_prices(context_items, move_out_date)
+                break
+            except Exception as e:
+                if attempt == max_retries: raise
+                logger.warning(f"⚠️ Pricing attempt {attempt + 1} failed for {event_id}: {e}. Retrying...")
+                await asyncio.sleep(2 ** attempt)
 
         for p in priced_results:
             item_id = p.get('id')
@@ -75,6 +105,10 @@ async def run_pricing_pipeline(event_id: str):
 
         await firestore_svc.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
         await notifier.notify_event(event_id, {"status": SaleStatus.READY_FOR_REVIEW, "message": "Pricing complete"})
+
+        duration = time.perf_counter() - start_time
+        logger.info(f"✅ Pricing Pipeline Success | Event: {event_id} | Time: {duration:.2f}s")
+
     except Exception as e:
         logger.exception(f"Pricing Pipeline Failed for event {event_id}")
         await firestore_svc.transition_sale_status(event_id, SaleStatus.FAILED)
