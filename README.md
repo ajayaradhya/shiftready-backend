@@ -175,14 +175,37 @@ stop-process -id (get-nettcpconnection -localport 8080).owningprocess -force
 | `LIVE`                | Sale is public on the marketplace.                        |
 | `ARCHIVED`            | Move complete; record frozen for history.                 |
 
+## Authentication (Local Development)
+
+The backend supports mock authentication for local development and testing. Any token starting with `dev_` will be accepted.
+
+### Swagger UI
+1. Open `http://localhost:8080/docs`.
+2. Click the **Authorize** button (lock icon).
+3. In the Value field, enter: `dev_ajay_2026`.
+4. Click **Authorize** and then **Close**.
+
+### JavaScript / Fetch
+```javascript
+const response = await fetch('/api/v1/sales/init', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer dev_ajay_2026',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({ filename: 'walkthrough.mp4' })
+});
+```
+
 ## Testing the Pipelines
 
 ### Initialise a Sale
 
 ```curl
-curl -X POST "http://localhost:8000/api/v1/sales/init" \
+curl -X POST "http://localhost:8080/api/v1/sales/init" \
+  -H "Authorization: Bearer dev_ajay_2026" \
   -H "Content-Type: application/json" \
-  -d '{"user_id": "test_user", "filename": "walkthrough.mp4"}'
+  -d '{"filename": "walkthrough.mp4"}'
 ```
 ### Trigger Pricing Analysis
 
