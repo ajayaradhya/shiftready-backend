@@ -107,37 +107,39 @@ class GeminiProcessor:
 
         inventory_context = json.dumps(items, indent=2)
 
-        prompt = f"""
-        Current Date: {datetime.now().strftime('%Y-%m-%d')}
-        Move-out Deadline: {move_out_date} ({days_remaining} days left)
-
-        Estimate listing prices for these items. 
-        Apply a {int((1-urgency_multiplier)*100)}% 'Urgency Discount' to the suggested prices 
-        because the user needs to clear the apartment quickly.
-
-        INVENTORY:
-        {inventory_context}
-
-        RETURN: A JSON array of objects with:
-        - id: (match the input id)
-        - listing_price: (Suggested AUD price)
-        - reasoning: (Short explanation including suburb demand)
-        """
+        pricing_schema = {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "id": {"type": "STRING", "description": "The unique ID of the item provided in the input."},
+                    "listing_price": {"type": "NUMBER", "description": "The suggested AUD listing price after urgency discount."},
+                    "reasoning": {"type": "STRING", "description": "Short explanation including suburb demand."}
+                },
+                "required": ["id", "listing_price", "reasoning"]
+            }
+        }
 
         response = await self.client.aio.models.generate_content(
             model=self.model_id,
-            contents=prompt,
+            contents=[
+                f"Current Date: {datetime.now().strftime('%Y-%m-%d')}",
+                f"Move-out Deadline: {move_out_date} ({days_remaining} days left)",
+                f"Apply a {int((1-urgency_multiplier)*100)}% Urgency Discount to the suggested prices.",
+                f"INVENTORY DATA:\n{inventory_context}"
+            ],
             config=types.GenerateContentConfig(
                 system_instruction=self.system_instruction,
                 temperature=0.2,
                 response_mime_type="application/json",
+                response_schema=pricing_schema,
                 # Search grounding is CRITICAL here for Sydney price matching
                 tools=[types.Tool(google_search=types.GoogleSearch())] 
             )
         )
 
         try:
-            return json.loads(response.text)
+            return response.parsed if hasattr(response, 'parsed') else json.loads(response.text)
         except Exception as e:
             logger.error(f"Pricing Error: {e}")
             return []

@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, WebSocket, WebSocketDisconnect
 from typing import Dict, Any
 from datetime import datetime
@@ -126,11 +127,18 @@ async def publish_sale(
     if not summary:
         raise HTTPException(status_code=404, detail="Sale not found")
 
+    # Optimization: Gather item updates to run concurrently
+    update_tasks = []
     for bundle in summary.get('bundles', []):
         for item in bundle['items']:
             if item.get('actual_listing_price') is None:
                 fallback = item.get('predicted_listing_price') or 0
-                await firestore_svc.update_item_data(event_id, bundle['id'], item['id'], {"actual_listing_price": fallback})
+                update_tasks.append(
+                    firestore_svc.update_item_data(event_id, bundle['id'], item['id'], {"actual_listing_price": fallback})
+                )
+
+    if update_tasks:
+        await asyncio.gather(*update_tasks)
 
     # Move direct DB access to service layer
     await firestore_svc.update_sale_metadata(event_id, {
