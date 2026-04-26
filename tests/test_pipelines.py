@@ -1,5 +1,4 @@
 import pytest
-from unittest.mock import MagicMock
 from app.services.pipelines import run_extraction_pipeline
 from app.models.schemas import SaleStatus
 from app.models.inventory import RoomBundle, InventoryItem

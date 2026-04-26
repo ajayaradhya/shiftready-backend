@@ -1,7 +1,7 @@
 import os
 import firebase_admin
-from firebase_admin import auth, credentials
-from fastapi import Depends, HTTPException, status, Header, Query
+from firebase_admin import auth
+from fastapi import Depends, HTTPException, status, Query
 from fastapi.concurrency import run_in_threadpool
 from starlette.requests import HTTPConnection
 from fastapi.security import HTTPBearer

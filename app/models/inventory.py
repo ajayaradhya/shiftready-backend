@@ -1,10 +1,7 @@
-from datetime import date
 
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
-from typing import List, Optional
 
 class InventoryItem(BaseModel):
     id: Optional[str] = None 

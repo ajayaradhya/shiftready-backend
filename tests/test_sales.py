@@ -1,7 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
-from app.models.schemas import SaleStatus
 
 @pytest.mark.asyncio
 async def test_init_sale_success(async_client, authenticated_user, mock_services):

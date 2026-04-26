@@ -1,14 +1,14 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, WebSocket, WebSocketDisconnect
-from typing import List, Dict, Any
+from typing import Dict, Any
 from datetime import datetime
 
 from app.models.schemas import (
     SaleInitRequest, SaleInitResponse, SalePublishRequest, 
-    BundleCreateRequest, ItemCreateRequest, ItemUpdate, SaleStatus
+    BundleCreateRequest, ItemCreateRequest, SaleStatus
 )
 
 # Import shared service singletons
-from app.services import firestore_svc, gemini_processor, gcs_utils, BUCKET_NAME
+from app.services import firestore_svc, gcs_utils, BUCKET_NAME
 from app.services.pipelines import run_extraction_pipeline, run_pricing_pipeline
 from app.services.notifier import notifier
 from app.services.auth import get_current_user, validate_sale_owner, User, security

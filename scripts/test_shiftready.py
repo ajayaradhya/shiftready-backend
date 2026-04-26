@@ -2,10 +2,7 @@ import argparse
 import random
 import requests
 import json
-import os
-import time
 from websocket import create_connection
-from datetime import datetime
 
 # Configuration
 API_BASE_URL = "http://127.0.0.1:8080/api/v1"

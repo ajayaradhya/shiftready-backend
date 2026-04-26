@@ -1,8 +1,7 @@
-import os
 import json
 import logging
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import Any
 
 from google import genai
 from google.genai import types
@@ -80,7 +79,7 @@ class GeminiProcessor:
                     try:
                         m, s = map(int, label.split(":"))
                         item["video_timestamp"] = float(m * 60 + s)
-                    except:
+                    except (ValueError, AttributeError):
                         item["video_timestamp"] = 0.0
                 
                 bundles.append(RoomBundle(**b_data))
@@ -96,7 +95,7 @@ class GeminiProcessor:
         try:
             deadline = datetime.strptime(move_out_date, "%Y-%m-%d")
             days_remaining = (deadline - datetime.now()).days
-        except:
+        except (ValueError, TypeError):
             days_remaining = 14 # Default safety window
 
         # URGENCY LOGIC
@@ -164,7 +163,8 @@ class GeminiProcessor:
             if isinstance(obj, dict):
                 if "anyOf" in obj:
                     non_null = [t for t in obj["anyOf"] if t.get("type") != "null"]
-                    if non_null: return clean_node(non_null[0])
+                    if non_null:
+                        return clean_node(non_null[0])
                 
                 # These fields are managed by the Backend/User, not the AI
                 forbidden = ["id", "listing_price", "actual_original_price", 
