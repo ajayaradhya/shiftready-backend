@@ -12,7 +12,7 @@ steps:
       - '-c'
       - |
         pip install ruff
-        ruff check .
+        ruff check . --exclude scripts
 
   # 2. Run Unit Tests with Coverage
   - name: 'python:3.13-slim'

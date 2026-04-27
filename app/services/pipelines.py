@@ -26,10 +26,12 @@ async def run_extraction_pipeline(event_id: str, gcs_uri: str, max_retries: int 
         for attempt in range(max_retries + 1):
             try:
                 bundles, ai_metadata = await gemini_processor.process_walkthrough(gcs_uri)
-                if bundles: break
+                if bundles: 
+                    break
                 logger.warning(f"⚠️ Extraction attempt {attempt + 1} returned no items for {event_id}. Retrying...")
             except Exception as e:
-                if attempt == max_retries: raise
+                if attempt == max_retries: 
+                    raise
                 logger.warning(f"⚠️ Extraction attempt {attempt + 1} failed for {event_id}: {e}. Retrying...")
                 await asyncio.sleep(2 ** attempt) # Exponential backoff
         
@@ -92,10 +94,12 @@ async def run_pricing_pipeline(event_id: str, max_retries: int = 2):
         for attempt in range(max_retries + 1):
             try:
                 priced_results, ai_metadata = await gemini_processor.estimate_listing_prices(context_items, move_out_date)
-                if priced_results: break
+                if priced_results: 
+                    break
                 logger.warning(f"⚠️ Pricing attempt {attempt + 1} returned no results for {event_id}. Retrying...")
             except Exception as e:
-                if attempt == max_retries: raise
+                if attempt == max_retries: 
+                    raise
                 logger.warning(f"⚠️ Pricing attempt {attempt + 1} failed for {event_id}: {e}. Retrying...")
                 await asyncio.sleep(2 ** attempt)
 

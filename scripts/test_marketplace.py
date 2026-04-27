@@ -3,7 +3,6 @@ import sys
 import time
 import subprocess
 import requests
-import json
 import signal
 from dotenv import load_dotenv
 
@@ -168,7 +167,7 @@ def run_tests(event_id, bundle_id, item_id):
     print("✅ Search is case-insensitive.")
 
     # Test 6: Item Detail
-    print(f"--- Test 6: Item Detail Retrieval ---")
+    print("--- Test 6: Item Detail Retrieval ---")
     res = requests.get(f"{API_URL}/items/{event_id}/{bundle_id}/{item_id}")
     assert res.status_code == 200
     assert res.json()["name"] == "Velvet Sofa"

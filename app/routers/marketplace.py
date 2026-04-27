@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Query
-from typing import List, Optional, Any
+from typing import Optional
 from app.services import firestore_svc
 from app.services.auth import get_optional_user, User
 

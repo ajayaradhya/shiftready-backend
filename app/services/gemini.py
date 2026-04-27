@@ -1,19 +1,13 @@
 import json
 import logging
 from datetime import datetime
-from typing import Any, List, Optional
-
+from typing import Any, List
 from google import genai
 from google.genai import types
-from dotenv import load_dotenv
-
 from pydantic import BaseModel, Field
-
-# Use the schema from models
 from app.models.inventory import RoomBundle
 
 logger = logging.getLogger(__name__)
-load_dotenv()
 
 class PricingResult(BaseModel):
     """Schema for structured pricing output."""
@@ -69,6 +63,13 @@ class GeminiProcessor:
         - IMPORTANT: Do not attempt to generate 'id' fields.
         """
 
+        metadata: dict[str, Any] = {
+            "model": self.model_id,
+            "engine": "google-genai-sdk",
+            "status": "processing",
+            "video_uri": gcs_uri
+        }
+
         bundle_schema = self._get_clean_schema(RoomBundle)
         
         response = await self.client.aio.models.generate_content(
@@ -88,17 +89,14 @@ class GeminiProcessor:
             )
         )
 
-        metadata: dict[str, Any] = {
-            "model": self.model_id,
-            "engine": "google-genai-sdk",
-            "usage": response.usage_metadata.model_dump() if hasattr(response, 'usage_metadata') else {},
-            "finish_reason": response.candidates[0].finish_reason if response.candidates else "UNKNOWN"
-        }
+        # Update metadata with actual usage
+        metadata["usage"] = response.usage_metadata.model_dump() if hasattr(response, 'usage_metadata') else {}
+        metadata["finish_reason"] = response.candidates[0].finish_reason if response.candidates else "UNKNOWN"
+        metadata["status"] = "success"
 
         try:
-            # Safer parsing for 2026 SDK
-            parsed = response.parsed if hasattr(response, 'parsed') else json.loads(response.text)
-            raw_data = parsed if parsed is not None else []
+            # Handle cases where response.parsed might be a list or a dictionary
+            raw_data = response.parsed if response.parsed is not None else json.loads(response.text)
             bundles = []
             for b_data in raw_data:
                 for item in b_data.get("items", []):
