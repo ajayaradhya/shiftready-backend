@@ -14,3 +14,7 @@ langchain
 langchain_google_genai
 langchain-google-vertexai
 langsmith
+pytest
+pytest-asyncio
+pytest-cov
+httpx
