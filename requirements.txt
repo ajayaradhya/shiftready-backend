@@ -10,3 +10,7 @@ google-genai>=1.12.0
 websocket-client
 firebase-admin
 asyncio
+langchain
+langchain_google_genai
+langchain-google-vertexai
+langsmith
