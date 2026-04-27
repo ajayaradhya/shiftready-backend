@@ -40,7 +40,13 @@ async def test_publish_sale_logic(async_client, sale_ownership_verified, mock_se
         }]
     }
     
-    payload = {"move_out_date": "2026-05-22"}
+    payload = {
+        "move_out_date": "2026-05-22",
+        "street_address": "123 Test St",
+        "suburb": "Testville",
+        "pincode": "2000",
+        "state": "NSW"
+    }
     response = await async_client.post(f"/api/v1/sales/{event_id}/publish", json=payload)
     
     assert response.status_code == 200

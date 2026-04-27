@@ -14,7 +14,7 @@ async def test_extraction_pipeline_success(mock_services):
                               confidence=0.9, predicted_year_of_purchase=2024, 
                               predicted_original_price=50.0)
     mock_bundle = RoomBundle(bundle_name="Living Room", items=[mock_item])
-    mock_services["gemini"].process_walkthrough.return_value = [mock_bundle]
+    mock_services["gemini"].process_walkthrough.return_value = ([mock_bundle], {"usage": "mock"})
     
     await run_extraction_pipeline(event_id, gcs_uri)
     
