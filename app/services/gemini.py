@@ -32,7 +32,7 @@ class GeminiProcessor:
         self.model_id = "gemini-3.1-flash-lite-preview"
         self.system_instruction = system_instruction
 
-    async def process_walkthrough(self, gcs_uri: str) -> list[RoomBundle]:
+    async def process_walkthrough(self, gcs_uri: str) -> tuple[list[RoomBundle], dict[str, Any]]:
         """
         Stage 1: Extraction & Temporal Anchoring.
         """
@@ -66,6 +66,7 @@ class GeminiProcessor:
             ],
             config=types.GenerateContentConfig(
                 temperature=0.1,
+                system_instruction=self.system_instruction,
                 response_mime_type="application/json",
                 response_schema=types.Schema(
                     type="ARRAY",
@@ -73,6 +74,12 @@ class GeminiProcessor:
                 )
             )
         )
+
+        metadata: dict[str, Any] = {
+            "model": self.model_id,
+            "usage": response.usage_metadata.model_dump() if hasattr(response, 'usage_metadata') else {},
+            "finish_reason": response.candidates[0].finish_reason if response.candidates else "UNKNOWN"
+        }
 
         try:
             # Safer parsing for 2026 SDK
@@ -90,12 +97,12 @@ class GeminiProcessor:
                         item["video_timestamp"] = 0.0
                 
                 bundles.append(RoomBundle(**b_data))
-            return bundles
+            return bundles, metadata
         except Exception as e:
             logger.error(f"Failed to parse walkthrough: {e}")
             raise e
 
-    async def estimate_listing_prices(self, items: list[dict[str, Any]], move_out_date: str) -> list[dict[str, Any]]:
+    async def estimate_listing_prices(self, items: list[dict[str, Any]], move_out_date: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """
         Stage 2: Sydney Market Analysis with Urgency Logic.
         """
@@ -145,12 +152,18 @@ class GeminiProcessor:
             )
         )
 
+        metadata = {
+            "model": self.model_id,
+            "usage": response.usage_metadata.model_dump() if hasattr(response, 'usage_metadata') else {},
+            "grounding_metadata": response.candidates[0].grounding_metadata.model_dump() if response.candidates and hasattr(response.candidates[0], 'grounding_metadata') else None
+        }
+
         try:
             parsed = response.parsed if hasattr(response, 'parsed') else json.loads(response.text)
-            return parsed if parsed is not None else []
+            return (parsed if parsed is not None else []), metadata
         except Exception as e:
             logger.error(f"Pricing Error: {e}")
-            return []
+            return [], metadata
 
     def _get_clean_schema(self, model) -> dict[str, Any]:
         """

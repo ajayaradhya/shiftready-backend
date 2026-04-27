@@ -22,10 +22,10 @@ async def run_extraction_pipeline(event_id: str, gcs_uri: str, max_retries: int 
         await firestore_svc.transition_sale_status(event_id, SaleStatus.PROCESSING)
         
         # 2. Call Gemini Vision with internal retry for transient errors
-        bundles = None
+        bundles, ai_metadata = None, {}
         for attempt in range(max_retries + 1):
             try:
-                bundles = await gemini_processor.process_walkthrough(gcs_uri)
+                bundles, ai_metadata = await gemini_processor.process_walkthrough(gcs_uri)
                 if bundles: break
                 logger.warning(f"⚠️ Extraction attempt {attempt + 1} returned no items for {event_id}. Retrying...")
             except Exception as e:
@@ -44,9 +44,13 @@ async def run_extraction_pipeline(event_id: str, gcs_uri: str, max_retries: int 
                 item_data = item.model_dump() if hasattr(item, 'model_dump') else item.dict()
                 await firestore_svc.add_item_to_bundle(event_id, bundle_id, item_data)
         
-        # 4. Move to Review stage
+        # 4. Move to Review stage and log AI metadata
         await firestore_svc.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
-        await notifier.notify_event(event_id, {"status": SaleStatus.READY_FOR_REVIEW, "message": "Extraction complete"})
+        await firestore_svc.update_sale_metadata(event_id, {"extractionMetadata": ai_metadata})
+        await notifier.notify_event(event_id, {
+            "status": SaleStatus.READY_FOR_REVIEW, 
+            "message": f"Extraction complete. Found {len(bundles)} bundles."
+        })
         
         duration = time.perf_counter() - start_time
         logger.info(f"✅ Extraction Pipeline Success | Event: {event_id} | Time: {duration:.2f}s")
@@ -84,10 +88,10 @@ async def run_pricing_pipeline(event_id: str, max_retries: int = 2):
                 })
 
         # Call Gemini with retry logic
-        priced_results = []
+        priced_results, ai_metadata = [], {}
         for attempt in range(max_retries + 1):
             try:
-                priced_results = await gemini_processor.estimate_listing_prices(context_items, move_out_date)
+                priced_results, ai_metadata = await gemini_processor.estimate_listing_prices(context_items, move_out_date)
                 if priced_results: break
                 logger.warning(f"⚠️ Pricing attempt {attempt + 1} returned no results for {event_id}. Retrying...")
             except Exception as e:
@@ -112,6 +116,7 @@ async def run_pricing_pipeline(event_id: str, max_retries: int = 2):
             await firestore_svc.recalculate_bundle_total(event_id, bundle['id'])
 
         await firestore_svc.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
+        await firestore_svc.update_sale_metadata(event_id, {"pricingMetadata": ai_metadata})
         await notifier.notify_event(event_id, {"status": SaleStatus.READY_FOR_REVIEW, "message": "Pricing complete"})
 
         duration = time.perf_counter() - start_time
