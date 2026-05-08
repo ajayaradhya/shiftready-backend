@@ -1,244 +1,84 @@
-import os
-from datetime import datetime
 from typing import Optional
 from google.cloud import firestore
+
+from app.core.config import settings
 from app.domain.status import SaleStatus
+from app.repos.bundle_repo import BundleRepo
+from app.repos.item_repo import ItemRepo
+from app.repos.marketplace_repo import MarketplaceRepo
+from app.repos.sale_repo import SaleRepo
+from app.repos.user_repo import UserRepo
+
 
 class FirestoreService:
+    """
+    Thin facade that wires the focused repo classes together and exposes the
+    original public API.  Callers (routers, pipelines, auth) are unchanged.
+    Individual repos are available as attributes for future direct access.
+    """
+
     def __init__(self):
-        # Automatically detects PROJECT_ID from environment in Cloud Run
-        project_id = os.getenv("GCP_PROJECT_ID")
-        self.db = firestore.AsyncClient(project=project_id)
+        self.db = firestore.AsyncClient(project=settings.gcp_project_id)
+        self._wire(self.db)
 
-    # --- USER OPERATIONS ---
+    def _wire(self, db: firestore.AsyncClient) -> None:
+        """(Re)initialise all repos against the given client. Called by tests to swap the event loop."""
+        self.db = db
+        self.sales = SaleRepo(db)
+        self.bundles = BundleRepo(db)
+        self.items = ItemRepo(db, self.bundles)
+        self.users = UserRepo(db)
+        self.marketplace = MarketplaceRepo(db)
 
+    # --- user ---
     async def upsert_user(self, user_id: str, email: str, name: Optional[str] = None):
-        """Ensures a user record exists in Firestore for profile metadata."""
-        user_ref = self.db.collection("users").document(user_id)
-        await user_ref.set({
-            "email": email,
-            "displayName": name,
-            "lastLogin": firestore.SERVER_TIMESTAMP,
-            "updatedAt": firestore.SERVER_TIMESTAMP
-        }, merge=True)
+        return await self.users.upsert_user(user_id, email, name)
 
-    # --- SALE EVENT: ROOT OPERATIONS ---
-
+    # --- sale ---
     async def create_sale_event(self, user_id: str, video_url: str) -> str:
-        """Initializes a SaleEvent (The Parent document)."""
-        doc_ref = self.db.collection("saleEvents").document()
-        await doc_ref.set({
-            "sellerId": user_id,
-            "status": SaleStatus.PENDING_UPLOAD,
-            "videoUrl": video_url,
-            "createdAt": firestore.SERVER_TIMESTAMP,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-            "statusHistory": [{
-                "status": SaleStatus.PENDING_UPLOAD,
-                "timestamp": datetime.now()
-            }]
-        })
-        return doc_ref.id
+        return await self.sales.create_sale_event(user_id, video_url)
 
     async def get_sale_event(self, event_id: str):
-        """Retrieves sale event metadata."""
-        doc = await self.db.collection("saleEvents").document(event_id).get()
-        return doc.to_dict() if doc.exists else None
+        return await self.sales.get_sale_event(event_id)
 
     async def transition_sale_status(self, event_id: str, new_status: SaleStatus):
-        """
-        Centrally manages all state changes. 
-        Maintains an audit trail in 'statusHistory' for 2026 compliance.
-        """
-        event_ref = self.db.collection("saleEvents").document(event_id)
-        
-        update_data = {
-            "status": new_status,
-            "lastTransitionAt": firestore.SERVER_TIMESTAMP,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-            "statusHistory": firestore.ArrayUnion([{
-                "status": new_status,
-                "timestamp": datetime.now()
-            }])
-        }
-        
-        await event_ref.update(update_data)
-        return True
+        return await self.sales.transition_sale_status(event_id, new_status)
 
     async def update_sale_metadata(self, event_id: str, updates: dict):
-        """General purpose metadata updates for the root sale event."""
-        event_ref = self.db.collection("saleEvents").document(event_id)
-        await event_ref.update({**updates, "updatedAt": firestore.SERVER_TIMESTAMP})
+        return await self.sales.update_sale_metadata(event_id, updates)
 
     async def list_all_sales(self, user_id: str):
-        """Dashboard view: Minimal metadata for high-speed listing."""
-        docs = self.db.collection("saleEvents") \
-                      .where(filter=firestore.FieldFilter("sellerId", "==", user_id)) \
-                      .order_by("createdAt", direction="DESCENDING").stream()
-        
-        return [{**d.to_dict(), "id": d.id} async for d in docs]
-
-    # --- HIERARCHY: THE FULL SUMMARY ---
+        return await self.sales.list_all_sales(user_id)
 
     async def get_full_event_summary(self, event_id: str):
-        """
-        Builds the complete JSON tree for the UI Review Cockpit.
-        Recursively fetches Bundles -> Items.
-        """
-        event_ref = self.db.collection("saleEvents").document(event_id)
-        event_doc = await event_ref.get()
-        
-        if not event_doc.exists:
-            return None
-            
-        data = event_doc.to_dict()
-        data["id"] = event_id
-        data["bundles"] = []
+        return await self.sales.get_full_event_summary(event_id)
 
-        # Fetch Bundles
-        bundles = event_ref.collection("bundles").stream()
-        async for b in bundles:
-            b_data = b.to_dict()
-            b_data["id"] = b.id
-            b_data["items"] = []
-            
-            # Fetch Items for this Bundle
-            items = b.reference.collection("items").stream()
-            async for i in items:
-                i_data = i.to_dict()
-                i_data["id"] = i.id
-                b_data["items"].append(i_data)
-                
-            data["bundles"].append(b_data)
-            
-        return data
-
-    # --- BUNDLE OPERATIONS ---
-
+    # --- bundle ---
     async def add_bundle(self, event_id: str, bundle_name: str, suggested_price: float = 0.0) -> str:
-        bundle_ref = self.db.collection("saleEvents").document(event_id) \
-                             .collection("bundles").document()
-        await bundle_ref.set({
-            "name": bundle_name,
-            "suggestedPrice": suggested_price,
-            "isPublished": False,
-            "createdAt": firestore.SERVER_TIMESTAMP
-        })
-        return bundle_ref.id
+        return await self.bundles.add_bundle(event_id, bundle_name, suggested_price)
 
     async def update_bundle_metadata(self, event_id: str, bundle_id: str, updates: dict):
-        await self.db.collection("saleEvents").document(event_id) \
-               .collection("bundles").document(bundle_id).update(updates)
+        return await self.bundles.update_bundle_metadata(event_id, bundle_id, updates)
 
     async def delete_bundle(self, event_id: str, bundle_id: str):
-        """Deletes a bundle and cleans up its internal items sub-collection."""
-        bundle_ref = self.db.collection("saleEvents").document(event_id) \
-                          .collection("bundles").document(bundle_id)
-        
-        # Manual sub-collection cleanup required by Firestore
-        items = bundle_ref.collection("items").stream()
-        async for item in items:
-            await item.reference.delete()
-            
-        await bundle_ref.delete()
-        return True
-
-    # --- ITEM OPERATIONS ---
-
-    async def add_item_to_bundle(self, event_id: str, bundle_id: str, item_data: dict):
-        item_ref = self.db.collection("saleEvents").document(event_id) \
-                          .collection("bundles").document(bundle_id) \
-                          .collection("items").document()
-        await item_ref.set(item_data)
-        return item_ref.id
-
-    async def update_item_data(self, event_id: str, bundle_id: str, item_id: str, updates: dict):
-        item_ref = self.db.collection("saleEvents").document(event_id) \
-                          .collection("bundles").document(bundle_id) \
-                          .collection("items").document(item_id)
-        await item_ref.update(updates)
-
-    async def delete_item(self, event_id: str, bundle_id: str, item_id: str):
-        """Removes an item and triggers a price recalculation for the bundle."""
-        await self.db.collection("saleEvents").document(event_id) \
-               .collection("bundles").document(bundle_id) \
-               .collection("items").document(item_id).delete()
-        
-        await self.recalculate_bundle_total(event_id, bundle_id)
-        return True
-
-    async def get_item_standalone(self, event_id: str, bundle_id: str, item_id: str):
-        """Deep link support: Fetch a single asset directly."""
-        doc = await self.db.collection("saleEvents").document(event_id) \
-                     .collection("bundles").document(bundle_id) \
-                     .collection("items").document(item_id).get()
-        return {**doc.to_dict(), "id": doc.id} if doc.exists else None
-
-    # --- AGGREGATION & RECALCULATION ---
+        return await self.bundles.delete_bundle(event_id, bundle_id)
 
     async def recalculate_bundle_total(self, event_id: str, bundle_id: str):
-        """Updates the aggregate bundle price based on all child items."""
-        bundle_ref = self.db.collection("saleEvents").document(event_id) \
-                             .collection("bundles").document(bundle_id)
-        
-        items = bundle_ref.collection("items").stream()
-        total = 0
-        async for i in items:
-            price = i.to_dict().get("actual_listing_price", 0)
-            try:
-                total += float(price or 0)
-            except (ValueError, TypeError):
-                continue # Skip invalid numeric data to prevent aggregate failure
-        
-        await bundle_ref.update({
-            "suggestedPrice": total,
-            "updatedAt": firestore.SERVER_TIMESTAMP
-        })
-        return total
+        return await self.bundles.recalculate_bundle_total(event_id, bundle_id)
 
-    # --- MARKETPLACE OPERATIONS ---
+    # --- item ---
+    async def add_item_to_bundle(self, event_id: str, bundle_id: str, item_data: dict):
+        return await self.items.add_item_to_bundle(event_id, bundle_id, item_data)
 
-    async def get_active_inventory(self, suburb: Optional[str] = None, query: Optional[str] = None):
-        """
-        Marketplace Search: Fetches items from LIVE sales.
-        Uses a Collection Group query to search 'items' across all sale events.
-        Note: Requires a Firestore index on 'items' collection with 'status' or similar.
-        """
-        # For MVP/Fast retrieval, we first find LIVE sale events
-        sales_query = self.db.collection("saleEvents").where(filter=firestore.FieldFilter("status", "==", SaleStatus.LIVE))
-        
-        if suburb:
-            # Sydney-centric suburb filtering
-            sales_query = sales_query.where(filter=firestore.FieldFilter("suburb", "==", suburb))
-        
-        live_sales = await sales_query.limit(20).get()
+    async def update_item_data(self, event_id: str, bundle_id: str, item_id: str, updates: dict):
+        return await self.items.update_item_data(event_id, bundle_id, item_id, updates)
 
-        if not live_sales:
-            return []
+    async def delete_item(self, event_id: str, bundle_id: str, item_id: str):
+        return await self.items.delete_item(event_id, bundle_id, item_id)
 
-        results = []
-        for sale_doc in live_sales:
-            event_id = sale_doc.id
-            sale_data = sale_doc.to_dict()
-            seller_id = sale_data.get("sellerId")
-            
-            # Fetch bundles for these sales
-            bundles = await self.db.collection("saleEvents").document(event_id).collection("bundles").get()
-            for b in bundles:
-                b_data = b.to_dict()
-                items = await b.reference.collection("items").get()
-                for i in items:
-                    item_data = i.to_dict()
-                    # Basic keyword search on name/brand
-                    if query and query.lower() not in item_data.get('name', '').lower() and \
-                       query and query.lower() not in item_data.get('brand', '').lower():
-                        continue
-                        
-                    results.append({
-                        **item_data,
-                        "id": i.id,
-                        "bundleName": b_data.get("name"),
-                        "eventId": event_id,
-                        "sellerId": seller_id
-                    })
-        return results
+    async def get_item_standalone(self, event_id: str, bundle_id: str, item_id: str):
+        return await self.items.get_item_standalone(event_id, bundle_id, item_id)
+
+    # --- marketplace ---
+    async def get_active_inventory(self, suburb=None, query=None):
+        return await self.marketplace.get_active_inventory(suburb=suburb, query=query)
