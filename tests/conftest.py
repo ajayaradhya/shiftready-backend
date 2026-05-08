@@ -2,9 +2,6 @@ import pytest
 import asyncio
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
-from httpx import AsyncClient, ASGITransport
-from app.main import app
-from app.services.auth import User
 
 # Fix for "Event loop is closed" on Windows
 if sys.platform == 'win32':
@@ -21,23 +18,27 @@ def event_loop():
 @pytest.fixture(scope="session")
 async def async_client():
     """Async client for testing FastAPI endpoints."""
+    # Lazy import: lets integration conftest set env vars + patches before app loads
+    from app.main import app
+    from httpx import AsyncClient, ASGITransport
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 
 @pytest.fixture
 def mock_user():
+    # Lazy import for same reason
+    from app.services.auth import User
     return User(id="test_user_123", email="tester@shiftready.test", name="Test User")
 
 @pytest.fixture(autouse=True)
 def mock_services():
     """
     Aggressively patches the SERVICE INSTANCES and CLIENT CLASSES.
-    This ensures that even if modules already imported the services, 
+    This ensures that even if modules already imported the services,
     the underlying network calls are intercepted.
     """
-    # Patch the actual instances used by the app
     from app.services import firestore_svc, gemini_processor, gcs_utils
-    
+
     with patch.object(firestore_svc, 'db', new=AsyncMock()), \
          patch.object(firestore_svc, 'transition_sale_status', new=AsyncMock(return_value=True)), \
          patch.object(firestore_svc, 'create_sale_event', new=AsyncMock(return_value="mock_event_id")), \
@@ -53,7 +54,7 @@ def mock_services():
          patch.object(gemini_processor, 'process_walkthrough', new=AsyncMock()), \
          patch.object(gemini_processor, 'estimate_listing_prices', new=AsyncMock()), \
          patch.object(gcs_utils, 'generate_upload_url', return_value="https://mock-upload-url"):
-        
+
         yield {
             "firestore": firestore_svc,
             "gemini": gemini_processor,
@@ -64,6 +65,7 @@ def mock_services():
 def authenticated_user(mock_user):
     """Overrides the auth dependency to simulate a logged-in user."""
     from app.services.auth import get_current_user
+    from app.main import app
     app.dependency_overrides[get_current_user] = lambda: mock_user
     yield mock_user
     app.dependency_overrides.pop(get_current_user, None)
@@ -72,6 +74,7 @@ def authenticated_user(mock_user):
 def sale_ownership_verified(mock_user):
     """Simulates that the current user owns the requested event."""
     from app.services.auth import validate_sale_owner
+    from app.main import app
     mock_event = {
         "id": "mock_event_id",
         "sellerId": mock_user.id,
