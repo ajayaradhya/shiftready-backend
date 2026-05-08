@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from typing import Optional
 from google.cloud import firestore
-from app.models.schemas import SaleStatus
+from app.domain.status import SaleStatus
 
 class FirestoreService:
     def __init__(self):

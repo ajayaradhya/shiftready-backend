@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime
-from app.models.schemas import SaleStatus
+from app.domain.status import SaleStatus
 from app.services import firestore_svc, gemini_processor
 from app.services.notifier import notifier
 
