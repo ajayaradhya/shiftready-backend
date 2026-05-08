@@ -98,13 +98,14 @@ def mock_external_services():
 @pytest.fixture(autouse=True)
 async def reinit_firestore():
     """
-    Replace firestore_svc.db with a fresh AsyncClient bound to THIS test's
-    event loop.  pytest-asyncio 1.x gives each test function its own loop, so
-    the gRPC channel must be created here — not at session scope — to avoid
-    "Future attached to a different loop" errors.
+    Replace firestore_svc and all its repos with a fresh AsyncClient bound to
+    THIS test's event loop.  pytest-asyncio 1.x gives each test function its
+    own loop, so the gRPC channel must be created here — not at session scope
+    — to avoid "Future attached to a different loop" errors.
+    _wire() rebuilds every repo against the new client in one call.
     """
     from app.services import firestore_svc
-    firestore_svc.db = fs_lib.AsyncClient(project="shiftready-test")
+    firestore_svc._wire(fs_lib.AsyncClient(project="shiftready-test"))
     yield
 
 
