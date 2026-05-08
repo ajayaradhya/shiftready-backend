@@ -7,7 +7,7 @@ verifies Firestore state directly via fsdb.
 """
 import pytest
 from app.models.inventory import InventoryItem, RoomBundle
-from app.models.schemas import SaleStatus
+from app.domain.status import SaleStatus
 from .conftest import auth, init_sale, USER_A
 
 

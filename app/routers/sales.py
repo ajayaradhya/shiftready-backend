@@ -3,9 +3,10 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, WebSocke
 from typing import Dict, Any
 from datetime import datetime
 
+from app.domain.status import SaleStatus
 from app.models.schemas import (
     SaleInitRequest, SaleInitResponse, SalePublishRequest, PriceEstimationRequest,
-    BundleCreateRequest, ItemCreateRequest, SaleStatus
+    BundleCreateRequest, ItemCreateRequest,
 )
 
 # Import shared service singletons

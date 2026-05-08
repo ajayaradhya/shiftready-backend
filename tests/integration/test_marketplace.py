@@ -7,7 +7,7 @@ and item detail endpoints.
 """
 import pytest
 from google.cloud import firestore as fs_lib
-from app.models.schemas import SaleStatus
+from app.domain.status import SaleStatus
 from .conftest import auth, SELLER, USER_A
 
 

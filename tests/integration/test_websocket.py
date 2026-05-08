@@ -12,7 +12,7 @@ import pytest
 import asyncio
 from httpx_ws import aconnect_ws
 from app.models.inventory import InventoryItem, RoomBundle
-from app.models.schemas import SaleStatus
+from app.domain.status import SaleStatus
 from .conftest import auth, init_sale, USER_A, USER_B
 
 
