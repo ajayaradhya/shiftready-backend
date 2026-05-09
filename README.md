@@ -1,217 +1,280 @@
-# ShiftReady Backend | The Relocation Monolith
+# ShiftReady Backend
 
-[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-v0.100+-009688.svg)](https://fastapi.tiangolo.com/)
-[![AI-Native](https://img.shields.io/badge/AI--Native-Gemini%203.1%20Flash%20Lite-7B1FA2.svg)](https://deepmind.google/technologies/gemini/)
-[![Architecture](https://img.shields.io/badge/Architecture-Intelligent%20Monolith-orange.svg)](#architecture)
+[![Python](https://img.shields.io/badge/Python-3.13-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-latest-009688.svg)](https://fastapi.tiangolo.com/)
+[![Gemini](https://img.shields.io/badge/AI-Google%20Gemini-7B1FA2.svg)](https://deepmind.google/technologies/gemini/)
+[![Cloud Run](https://img.shields.io/badge/Deploy-Cloud%20Run-4285F4.svg)](https://cloud.google.com/run)
+[![License](https://img.shields.io/badge/License-Proprietary-red.svg)](#license)
 
-ShiftReady is an AI-enabled relocation and inventory management monolith designed to streamline residential transitions. It orchestrates a multi-stage pipeline from computer vision-based inventory extraction to market-aware pricing enabling users to bundle and sell household assets before their move-out deadline.
+AI-native FastAPI service that automates residential relocation inventory management. Processes walkthrough videos with Gemini vision, extracts and prices household items, and publishes them to a marketplace — all before move-out day.
+
+**Companion UI:** [`../shiftready-ui`](../shiftready-ui) — Next.js 16 / React 19 frontend.
 
 ---
 
-## Key Features
+## Table of Contents
 
-- **Temporal Vision Extraction**: Processes residential walkthrough videos using Gemini 3.1 Flash Lite with clock-time anchoring to identify assets and room bundles.
-- **Urgency-Aware Pricing Engine**: Real-time Sydney market analysis (Waterloo/Zetland/Alexandria) that adjusts listing prices based on move-out deadlines.
-- **State Machine Architecture**: A robust transition engine (Firestore-backed) managing sale lifecycles from `PENDING_UPLOAD` to `LIVE` and `ARCHIVED`.
-- **Zero-Blink Polling**: Optimized polling endpoints for seamless UI transitions during intensive AI workloads.
-- **Marketplace Sync**: Automated bundle-total recalculations and inventory synchronization across the cloud ledger.
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Local Setup](#local-setup)
+- [API Reference](#api-reference)
+- [Sale Lifecycle](#sale-lifecycle)
+- [Testing](#testing)
+- [CI/CD](#cicd)
+- [License](#license)
+
+---
+
+## Architecture
+
+```mermaid
+graph LR
+    User[("Relocating User")]
+    Buyer[("Sydney Buyer")]
+
+    subgraph System["ShiftReady Platform"]
+        direction TB
+        Intake["1. Video Intake\n(Init Sale + GCS Upload)"]
+        Scanner["2. AI Vision Scan\n(Gemini Extraction)"]
+        Cockpit["3. Review Cockpit\n(Human-in-the-Loop)"]
+        Pricer["4. Urgency Pricer\n(Gemini Market Analysis)"]
+        LiveDB[("Firestore\n(Inventory · Prices · Status)")]
+
+        Intake -->|processing| Scanner
+        Scanner -->|Populates| LiveDB
+        LiveDB <-->|Review/Edit| Cockpit
+        Cockpit -->|Triggers pricing| Pricer
+        Pricer -->|Updates prices| LiveDB
+    end
+
+    subgraph Cloud["External Services"]
+        GCS[("Google Cloud Storage\n(Walkthrough Video)")]
+        GSearch[("Google Search\n(Market Grounding)")]
+    end
+
+    User -->|"A. Upload walkthrough"| Intake
+    Intake -.->|Stores video| GCS
+    Scanner -.->|Reads video| GCS
+    User -->|"B. Verify inventory"| Cockpit
+    User -->|"C. Set deadline + publish"| Cockpit
+    Pricer -.->|Queries resale values| GSearch
+    LiveDB ==>|live| Marketplace[("Public Marketplace")]
+    Marketplace -->|Browse + Buy| Buyer
+```
+
+### Pipeline
+
+```
+PENDING_UPLOAD → PROCESSING → READY_FOR_REVIEW → PRICING_IN_PROGRESS → LIVE → ARCHIVED
+```
+
+### Project Layout
+
+```
+shiftready-backend/
+├── app/
+│   ├── main.py             # Entry point, middleware registration
+│   ├── routers/
+│   │   ├── sales.py        # Inventory & sales endpoints
+│   │   └── marketplace.py  # Public marketplace endpoints
+│   ├── models/
+│   │   ├── inventory.py    # Domain models
+│   │   └── schemas.py      # Request/response Pydantic schemas
+│   ├── services/
+│   │   ├── firestore.py    # All Firestore CRUD
+│   │   ├── gemini.py       # Gemini vision + pricing calls
+│   │   ├── pipelines.py    # Background AI pipeline tasks
+│   │   ├── auth.py         # Firebase token validation
+│   │   └── notifier.py     # WebSocket connection manager
+│   └── utils/
+│       └── gcs.py          # Signed URL generation
+└── tests/
+    ├── test_api.py
+    ├── test_pipelines.py
+    ├── test_sales.py
+    └── integration/        # Full lifecycle, auth, marketplace, WebSocket
+```
 
 ---
 
 ## Tech Stack
 
-- **Framework**: FastAPI (Asynchronous Python 3.11+)
-- **Intelligence**: Gemini 3.1 Flash Lite (via Google GenAI Vertex AI SDK)
-- **Database**: Google Cloud Firestore (NoSQL Hierarchical Storage)
-- **Storage**: Google Cloud Storage (GCS)
-- **Deployment**: Google Cloud Run (Containerized Monolith)
+| Layer | Technology |
+|---|---|
+| Framework | FastAPI + Uvicorn (async Python 3.13) |
+| AI | Google Gemini via `google-genai` SDK |
+| AI Orchestration | LangChain + LangSmith |
+| Database | Google Cloud Firestore (Native mode) |
+| Storage | Google Cloud Storage |
+| Auth | Firebase Admin SDK (ID token validation) |
+| Real-time | WebSockets (FastAPI native) |
+| Deployment | Google Cloud Run (`australia-southeast1`) |
+| CI/CD | Google Cloud Build |
 
 ---
 
-## Architecture: The Intelligent Monolith
+## Local Setup
 
-The project follows a modular monolith pattern, isolating business logic (Services) from the interface (Routers) to ensure maintainability.
+### Prerequisites
 
-```mermaid
-graph LR
-    %% --- ACTORS ---
-    User[("🏠<br/>Relocating<br/>User")]
-    Buyer[("💰<br/>Sydney<br/>Buyer")]
+- Python 3.13+
+- Google Cloud CLI (`gcloud`) authenticated
+- A GCP project with Firestore (Native mode), GCS, and Vertex AI enabled
+- A Firebase project with Authentication enabled
 
-    %% --- THE CORE SYSTEM ---
-    subgraph System["[The Monolith] ShiftReady AI Platform"]
-        direction TB
-        
-        Intake["1. Video Intake<br/>(Initialize Sale & Upload)"]
-        Scanner["2. AI Inventory Scan<br/>(Gemini Vision Extraction)"]
-        Cockpit["3. Review Cockpit<br/>(Human-in-the-Loop Edits)"]
-        Pricer["4. AI Urgency Pricer<br/>(Gemini Market Analysis)"]
-        LiveDB[("Cloud Ledger<br/>(Inventory, Prices, Status)")]
-        
-        %% Internal System Flows
-        Intake -->|'processing'| Scanner
-        Scanner -->|Populates| LiveDB
-        LiveDB <-->|Review/Edit| Cockpit
-        Cockpit -->|Triggers pricing| Pricer
-        Pricer -->|Updates Prices| LiveDB
-    end
-
-    %% --- EXTERNAL DEPENDENCIES ---
-    subgraph Cloud["External Cloud Services"]
-        VideoStore[("Google Cloud Storage<br/>(Walkthrough Video)")]
-        GSearch[("Google Search<br/>(Grounding Market Data)")]
-    end
-
-    %% --- USER FLOWS ---
-    User == "A. Records & Uploads Walkthrough" ==> Intake
-    Intake -. "Stores Video" .-> VideoStore
-    Scanner -. "Analyzes Video" .-> VideoStore
-    User == "B. Verifies Inventory" ==> Cockpit
-    User == "C. Sets Deadline & Publishes" ==> Cockpit
-    
-    %% AI Grounding Flow
-    Pricer -. "Queries Resale Values" .-> GSearch
-
-    %% Final Output
-    LiveDB ==>|'live'| Marketplace[("🌐<br/>Public<br/>Marketplace")]
-    Marketplace ====|"Browse & Buy"| Buyer
-
-    %% --- STYLING ---
-    %% Client/External (Yellow)
-    style User fill:#FFFDE7,stroke:#FBC02D,stroke-width:2px;
-    style Buyer fill:#FFFDE7,stroke:#FBC02D,stroke-width:2px;
-    style Cloud fill:#FFFDE7,stroke:#FBC02D,stroke-width:1px,stroke-dasharray: 5 5;
-    style VideoStore fill:#FFFDE7,stroke:#FBC02D,stroke-width:1px;
-    style GSearch fill:#FFFDE7,stroke:#FBC02D,stroke-width:1px;
-    
-    %% Core System Components (Blue)
-    style Intake fill:#E3F2FD,stroke:#1976D2,stroke-width:1px;
-    style Scanner fill:#E3F2FD,stroke:#1976D2,stroke-width:1px;
-    style Cockpit fill:#E3F2FD,stroke:#1976D2,stroke-width:1px;
-    style Pricer fill:#E3F2FD,stroke:#1976D2,stroke-width:1px;
-    style LiveDB fill:#E3F2FD,stroke:#1976D2,stroke-width:2px;
-    
-    %% Marketplace (Green)
-    style Marketplace fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px;
-```
-
-## File Structure
-
-```text
-app/
-├── models/         # Pydantic Schemas & Data Models
-├── routers/        # FastAPI Route Handlers (Sales, Inventory, etc.)
-├── services/       # Core Logic (Firestore, Gemini, GCS Utils)
-├── utils/          # Shared Helpers (GCS Signers, Formatting)
-└── main.py         # Entry point & Global Middleware
-```
-
-## 🔧 Local Setup
-
-### 1. Prerequisites
-
-- Python 3.11+
-- Google Cloud CLI (`gcloud`) configured
-- Firestore instance enabled in Native Mode
-
----
-
-### 2. Installation
+### 1. Clone and install
 
 ```bash
 git clone https://github.com/ajayaradhya/shiftready-backend.git
 cd shiftready-backend
 
-# Create and activate virtual environment
 python -m venv .venv
-source .venv/bin/activate  # MacOS/Linux
-# .venv\Scripts\activate   # Windows
+source .venv/bin/activate      # macOS/Linux
+# .venv\Scripts\activate       # Windows
 
-# Install dependencies
 pip install -r requirements.txt
 ```
 
-### 3. Environment Variables (.env)
+### 2. Configure environment
 
-1. **Service Account**: Obtain the JSON key from the GCP Console (IAM > Service Accounts > Keys) and save it as `shiftready-backend-service-account.json` in the root.
-2. **Security**: Ensure this file is listed in your `.gitignore` to prevent accidental commits.
-3. **.env Setup**: Copy `.env.example` contents into `.env` file. Ask a developer for the contents. It should look like this:
+```bash
+cp .env.example .env
+```
+
+Edit `.env`:
 
 ```env
 GCP_PROJECT_ID=your-project-id
+GCP_SERVICE_ACCOUNT=your-service-account@your-project.iam.gserviceaccount.com
 GCP_UPLOAD_BUCKET=your-gcs-bucket-name
-GOOGLE_APPLICATION_CREDENTIALS=shiftready-backend-service-account.json
-PORT=8080
+GCP_REGION=australia-southeast1
+GOOGLE_APPLICATION_CREDENTIALS=./shiftready-backend-service-account.json
 ```
 
-### 4. Running the Project
-Development Mode
+Place your GCP service account key at `shiftready-backend-service-account.json` in the project root. This file is gitignored — never commit it.
+
+### 3. Run
+
 ```bash
 uvicorn app.main:app --reload --port 8080
 ```
 
-API Documentation
+| Endpoint | URL |
+|---|---|
+| Swagger UI | http://localhost:8080/docs |
+| ReDoc | http://localhost:8080/redoc |
+| Health check | http://localhost:8080/health |
 
-```text
-Swagger UI: http://localhost:8080/docs
+### Local authentication
 
-ReDoc: http://localhost:8080/redoc
-```
+Any token prefixed with `dev_` bypasses Firebase verification when `K_SERVICE` is not set (i.e., outside Cloud Run). Use `dev_<your-name>` as a Bearer token in Swagger or curl.
 
-Stopping the process
+**Swagger:** Click **Authorize** → enter `dev_yourname` → Authorize.
+
+**curl:**
 ```bash
-stop-process -id (get-nettcpconnection -localport 8080).owningprocess -force
-```
-
-## Sale Lifecycle (State Machine)
-
-| Status                | Description                                               |
-| --------------------- | --------------------------------------------------------- |
-| `PENDING_UPLOAD`      | Sale initialized; waiting for GCS video upload.           |
-| `PROCESSING`          | Gemini Vision is extracting items and bundles from video. |
-| `READY_FOR_REVIEW`    | Inventory prepared for user verification.                 |
-| `PRICING_IN_PROGRESS` | Gemini is analyzing market trends for valuation.          |
-| `LIVE`                | Sale is public on the marketplace.                        |
-| `ARCHIVED`            | Move complete; record frozen for history.                 |
-
-## Authentication (Local Development)
-
-The backend supports mock authentication for local development and testing. Any token starting with `dev_` will be accepted.
-
-### Swagger UI
-1. Open `http://localhost:8080/docs`.
-2. Click the **Authorize** button (lock icon).
-3. In the Value field, enter: `dev_ajay_2026`.
-4. Click **Authorize** and then **Close**.
-
-### JavaScript / Fetch
-```javascript
-const response = await fetch('/api/v1/sales/init', {
-  method: 'POST',
-  headers: {
-    'Authorization': 'Bearer dev_ajay_2026',
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify({ filename: 'walkthrough.mp4' })
-});
-```
-
-## Testing the Pipelines
-
-### Initialise a Sale
-
-```curl
 curl -X POST "http://localhost:8080/api/v1/sales/init" \
-  -H "Authorization: Bearer dev_ajay_2026" \
+  -H "Authorization: Bearer dev_yourname" \
   -H "Content-Type: application/json" \
   -d '{"filename": "walkthrough.mp4"}'
 ```
-### Trigger Pricing Analysis
+
+---
+
+## API Reference
+
+All endpoints are prefixed with `/api/v1`. Protected endpoints require `Authorization: Bearer <token>`.
+
+### Sales & Inventory (`/sales`)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/sales` | List all sales for the authenticated user |
+| `POST` | `/sales/init` | Initialize a sale; returns a GCS signed PUT URL |
+| `POST` | `/sales/{id}/process` | Trigger Gemini vision extraction |
+| `GET` | `/sales/{id}/status` | Poll current sale status |
+| `GET` | `/sales/{id}/summary` | Full inventory hierarchy with signed video URL |
+| `WS` | `/sales/{id}/ws` | WebSocket stream for real-time status updates |
+| `POST` | `/sales/{id}/estimate` | Trigger Gemini pricing analysis |
+| `POST` | `/sales/{id}/publish` | Publish sale to the marketplace |
+| `POST` | `/sales/{id}/unpublish` | Unpublish an active sale |
+| `POST` | `/sales/{id}/bundles` | Add a bundle to the sale |
+| `DELETE` | `/sales/{id}/bundles/{bundle_id}` | Remove a bundle |
+| `POST` | `/sales/{id}/bundles/{bundle_id}/items` | Add a manual item to a bundle |
+| `PATCH` | `/sales/{id}/bundles/{bundle_id}/items/{item_id}` | Update an item |
+| `DELETE` | `/sales/{id}/bundles/{bundle_id}/items/{item_id}` | Remove an item |
+
+### Marketplace (`/marketplace`)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/marketplace/search` | Search live sales (supports suburb + keyword filters) |
+| `GET` | `/marketplace/items/{event_id}/{bundle_id}/{item_id}` | Item detail (seller info masked for non-owners) |
+
+---
+
+## Sale Lifecycle
+
+| Status | Description |
+|---|---|
+| `PENDING_UPLOAD` | Sale record created; waiting for GCS video upload |
+| `PROCESSING` | Gemini Vision extracting items and bundles from video |
+| `READY_FOR_REVIEW` | Inventory ready; user can edit before pricing |
+| `PRICING_IN_PROGRESS` | Gemini analysing Sydney market for price estimates |
+| `LIVE` | Sale published and publicly visible on marketplace |
+| `ARCHIVED` | Move complete; record frozen |
+
+Terminal states: `PARTIALLY_SOLD`, `EXPIRED`, `FAILED`, `ARCHIVED`.
+
+---
+
+## Testing
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/sales/{event_id}/estimate"
+# Full suite with coverage
+pytest --cov=app --cov-report=term-missing
+
+# Single file
+pytest tests/test_sales.py -v
+
+# Single test
+pytest tests/test_sales.py::test_function_name -v
+
+# Integration tests only
+pytest tests/integration/ -v
 ```
 
-### License
-Internal Proprietary - ShiftReady 2026
+Tests cover: sale lifecycle, authorization, inventory CRUD, marketplace, pipelines, and WebSocket.
+
+---
+
+## CI/CD
+
+`cloudbuild.yaml` runs on every push:
+
+1. **Lint** — `ruff check` (excludes `scripts/`)
+2. **Test** — `pytest` with coverage; report uploaded as XML artifact
+3. **Build** — Docker image built with layer caching from the previous `latest` tag
+4. **Push** — Tagged `SHORT_SHA` and `latest` to Google Artifact Registry
+5. **Deploy** — Cloud Run deployment to `australia-southeast1`, unauthenticated access
+
+Machine: `E2_HIGHCPU_8` | Timeout: 1200s
+
+---
+
+## Working with the Full Stack
+
+Both repos are designed to be edited together in a single Claude Code session:
+
+```bash
+# From the backend directory
+claude --add-dir ../shiftready-ui
+```
+
+See [`../shiftready-ui`](../shiftready-ui) for the frontend README.
+
+---
+
+## License
+
+Internal proprietary — ShiftReady 2026.
