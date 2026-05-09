@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, WebSocket, WebSocketDisconnect
 
@@ -170,7 +170,7 @@ async def publish_sale(
         "suburb": payload.suburb,
         "pincode": payload.pincode,
         "state": payload.state,
-        "publishedAt": datetime.now(),
+        "publishedAt": datetime.now(timezone.utc),
     })
 
     await firestore.transition_sale_status(event_id, SaleStatus.LIVE)

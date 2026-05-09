@@ -4,7 +4,6 @@ Layer 5 — Inventory CRUD.
 Covers bundle and item create/update/delete operations and verifies that
 bundle totals are recalculated correctly after every mutation.
 """
-import pytest
 from .conftest import auth, init_sale, USER_A
 
 
@@ -49,7 +48,7 @@ async def get_summary(client, event_id: str) -> dict:
 
 async def test_add_bundle_appears_in_summary(client):
     event_id = await init_sale(client)
-    bundle_id = await add_bundle(client, event_id, "Living Room")
+    await add_bundle(client, event_id, "Living Room")
 
     summary = await get_summary(client, event_id)
     bundle_names = [b["name"] for b in summary["bundles"]]
@@ -145,7 +144,7 @@ async def test_delete_item_recalculates_bundle_total(client):
     event_id = await init_sale(client)
     bundle_id = await add_bundle(client, event_id)
     item_id_a = await add_item(client, event_id, bundle_id, actual_listing_price=200.0)
-    item_id_b = await add_item(client, event_id, bundle_id, actual_listing_price=100.0)
+    await add_item(client, event_id, bundle_id, actual_listing_price=100.0)
 
     r = await client.delete(
         f"/api/v1/sales/{event_id}/bundles/{bundle_id}/items/{item_id_a}",

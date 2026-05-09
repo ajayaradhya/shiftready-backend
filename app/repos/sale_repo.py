@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from google.cloud import firestore
 
 from app.domain.status import SaleStatus
@@ -19,7 +19,7 @@ class SaleRepo:
             "videoUrl": video_url,
             "createdAt": firestore.SERVER_TIMESTAMP,
             "updatedAt": firestore.SERVER_TIMESTAMP,
-            "statusHistory": [{"status": SaleStatus.PENDING_UPLOAD, "timestamp": datetime.now()}],
+            "statusHistory": [{"status": SaleStatus.PENDING_UPLOAD, "timestamp": datetime.now(timezone.utc)}],
         })
         return doc_ref.id
 
@@ -33,7 +33,7 @@ class SaleRepo:
             "lastTransitionAt": firestore.SERVER_TIMESTAMP,
             "updatedAt": firestore.SERVER_TIMESTAMP,
             "statusHistory": firestore.ArrayUnion([
-                {"status": new_status, "timestamp": datetime.now()}
+                {"status": new_status, "timestamp": datetime.now(timezone.utc)}
             ]),
         })
         return True
