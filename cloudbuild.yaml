@@ -28,8 +28,8 @@ steps:
         apt-get update -qq
         apt-get install -y -qq --no-install-recommends default-jre-headless
 
-        # ── Install Firestore emulator via gcloud component ───────────────────
-        gcloud components install cloud-firestore-emulator --quiet
+        # ── Install Firestore emulator (apt-managed SDK, not gcloud components) ─
+        apt-get install -y -qq --no-install-recommends google-cloud-cli-firestore-emulator
 
         # ── Install Python dependencies ────────────────────────────────────────
         pip3 install -r requirements.txt --quiet
