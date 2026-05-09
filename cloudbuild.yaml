@@ -36,21 +36,21 @@ steps:
 
         # ── Start Firestore emulator in background ─────────────────────────────
         gcloud beta emulators firestore start --host-port=127.0.0.1:8089 &
-        EMULATOR_PID=$!
+        EMULATOR_PID=$$!
 
         # ── Wait until the emulator REST endpoint responds (max 30 s) ──────────
         echo "Waiting for Firestore emulator..."
-        for i in $(seq 1 30); do
+        for i in $$(seq 1 30); do
           curl -sf http://127.0.0.1:8089/ >/dev/null 2>&1 && break || sleep 1
         done
         echo "Firestore emulator ready"
 
         # ── Run tests ─────────────────────────────────────────────────────────
         python3 -m pytest
-        EXIT_CODE=$?
+        EXIT_CODE=$$?
 
-        kill $EMULATOR_PID 2>/dev/null || true
-        exit $EXIT_CODE
+        kill $$EMULATOR_PID 2>/dev/null || true
+        exit $$EXIT_CODE
 
   # 3. Pull the latest image for Docker layer caching
   - name: 'gcr.io/cloud-builders/docker'
