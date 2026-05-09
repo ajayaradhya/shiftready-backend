@@ -206,7 +206,6 @@ async def test_publish_stores_address_in_firestore(client, fsdb, mock_extraction
 async def test_publish_applies_fallback_price_for_unpriced_items(client, mock_extraction):
     """Items without actual_listing_price should fall back to predicted_listing_price on publish."""
     # Use extraction mock that returns an item with predicted price but no actual price
-    from unittest.mock import AsyncMock
     item = InventoryItem(
         name="Old Chair",
         brand="IKEA",

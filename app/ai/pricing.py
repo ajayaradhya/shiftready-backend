@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from google import genai
@@ -28,8 +28,8 @@ class PricingService:
         }
 
         try:
-            deadline = datetime.strptime(move_out_date, "%Y-%m-%d")
-            days_remaining = (deadline - datetime.now()).days
+            deadline = datetime.strptime(move_out_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            days_remaining = (deadline - datetime.now(timezone.utc)).days
         except (ValueError, TypeError):
             days_remaining = 14
 
@@ -42,7 +42,7 @@ class PricingService:
 
         prompt = (
             f"Analyze the following inventory for a move in Sydney.\n"
-            f"Current Date: {datetime.now().strftime('%Y-%m-%d')}\n"
+            f"Current Date: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}\n"
             f"Move-out Deadline: {move_out_date} ({days_remaining} days left)\n"
             f"Apply a {int((1 - urgency_multiplier) * 100)}% Urgency Discount.\n\n"
             f"INVENTORY DATA:\n{json.dumps(items, indent=2)}"
