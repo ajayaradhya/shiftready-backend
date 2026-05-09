@@ -1,21 +1,22 @@
 from fastapi import APIRouter, Depends, Query
 from typing import Optional
-from app.services import firestore_svc
+from app.core.deps import FirestoreDep
 from app.services.auth import get_optional_user, User
 
 router = APIRouter(prefix="/marketplace", tags=["Marketplace"])
 
 @router.get("/search")
 async def search_marketplace(
+    firestore: FirestoreDep,
     q: Optional[str] = Query(None, description="Search by item name or brand"),
     suburb: Optional[str] = Query(None, description="Filter by Sydney suburb (e.g. Waterloo)"),
-    user: Optional[User] = Depends(get_optional_user)
+    user: Optional[User] = Depends(get_optional_user),
 ):
     """
-    The Primary Marketplace View. 
+    The Primary Marketplace View.
     Shows nearby items (by suburb) and supports keyword search.
     """
-    items = await firestore_svc.get_active_inventory(suburb=suburb, query=q)
+    items = await firestore.get_active_inventory(suburb=suburb, query=q)
     
     # Mask sensitive data for anonymous users
     processed_items = []
@@ -46,13 +47,14 @@ async def search_marketplace(
 
 @router.get("/items/{event_id}/{bundle_id}/{item_id}")
 async def get_item_detail(
-    event_id: str, 
-    bundle_id: str, 
-    item_id: str, 
-    user: Optional[User] = Depends(get_optional_user)
+    event_id: str,
+    bundle_id: str,
+    item_id: str,
+    firestore: FirestoreDep,
+    user: Optional[User] = Depends(get_optional_user),
 ):
     """Detailed view for a single item."""
-    item = await firestore_svc.get_item_standalone(event_id, bundle_id, item_id)
+    item = await firestore.get_item_standalone(event_id, bundle_id, item_id)
     if not item:
         return {"error": "Item not found"}
 
