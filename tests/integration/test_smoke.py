@@ -1,5 +1,4 @@
 """Layer 1 — Smoke tests: app boots, base routes respond, auth guards are active."""
-import pytest
 from .conftest import auth, USER_A
 
 

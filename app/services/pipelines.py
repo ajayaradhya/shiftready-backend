@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.domain.status import SaleStatus
 from app.services.firestore import FirestoreService
@@ -82,7 +82,7 @@ async def run_pricing_pipeline(
 
     try:
         summary = await firestore.get_full_event_summary(event_id)
-        move_out_date = summary.get("moveOutDate") or datetime.now().strftime("%Y-%m-%d")
+        move_out_date = summary.get("moveOutDate") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         context_items: list[dict] = []
         item_to_bundle: dict[str, str] = {}

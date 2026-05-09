@@ -5,7 +5,6 @@ Tests the extraction and pricing pipelines end-to-end using Gemini mocks:
 success paths, failure paths, and retry semantics.  Background tasks run
 synchronously in ASGITransport so no polling is needed.
 """
-import pytest
 from app.models.inventory import InventoryItem, RoomBundle
 from app.domain.status import SaleStatus
 from .conftest import auth, init_sale, USER_A
