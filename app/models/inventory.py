@@ -1,6 +1,7 @@
 
+from typing import Optional
+
 from pydantic import BaseModel, Field
-from typing import List, Optional
 
 
 class InventoryItem(BaseModel):
@@ -36,4 +37,4 @@ class InventoryItem(BaseModel):
 class RoomBundle(BaseModel):
     id: Optional[str] = None
     bundle_name: str
-    items: List[InventoryItem]
+    items: list[InventoryItem]

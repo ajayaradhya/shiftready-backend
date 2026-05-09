@@ -1,12 +1,15 @@
 import asyncio
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, WebSocket, WebSocketDisconnect
-from typing import Dict, Any
 from datetime import datetime
+
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, WebSocket, WebSocketDisconnect
 
 from app.domain.status import SaleStatus
 from app.models.schemas import (
-    SaleInitRequest, SaleInitResponse, SalePublishRequest, PriceEstimationRequest,
-    BundleCreateRequest, ItemCreateRequest,
+    BundleCreateRequest, BundleCreateResponse,
+    ItemCreateRequest, ItemCreateResponse, ItemUpdate,
+    PriceEstimationRequest,
+    SaleInitRequest, SaleInitResponse, SalePublishRequest,
+    SaleStatusResponse, StatusResponse,
 )
 
 from app.core.deps import FirestoreDep, GCSDep, BucketDep, GeminiDep
@@ -46,7 +49,7 @@ async def init_sale(
         "gcs_uri": gcs_uri,
     }
 
-@router.post("/{event_id}/process")
+@router.post("/{event_id}/process", response_model=StatusResponse)
 async def start_processing(
     event_id: str,
     background_tasks: BackgroundTasks,
@@ -61,7 +64,7 @@ async def start_processing(
     background_tasks.add_task(run_extraction_pipeline, event_id, event["videoUrl"], firestore, gemini)
     return {"status": "processing_started"}
 
-@router.get("/")
+@router.get("/", response_model=list[SaleStatusResponse])
 async def list_sales(
     firestore: FirestoreDep,
     current_user: User = Depends(get_current_user),
@@ -87,7 +90,7 @@ async def get_sale_summary(
     return summary
 
 
-@router.get("/{event_id}/status")
+@router.get("/{event_id}/status", response_model=StatusResponse)
 async def get_status(event_id: str, event: dict = Depends(validate_sale_owner)):
     if not event:
         raise HTTPException(status_code=404, detail="Sale Event not found")
@@ -122,7 +125,7 @@ async def status_websocket(
 
 # --- STATE TRANSITIONS ---
 
-@router.post("/{event_id}/estimate")
+@router.post("/{event_id}/estimate", response_model=StatusResponse)
 async def trigger_reestimation(
     event_id: str,
     payload: PriceEstimationRequest,
@@ -137,7 +140,7 @@ async def trigger_reestimation(
     background_tasks.add_task(run_pricing_pipeline, event_id, firestore, gemini)
     return {"status": SaleStatus.PRICING_IN_PROGRESS}
 
-@router.post("/{event_id}/publish")
+@router.post("/{event_id}/publish", response_model=StatusResponse)
 async def publish_sale(
     event_id: str,
     payload: SalePublishRequest,
@@ -173,7 +176,7 @@ async def publish_sale(
     await firestore.transition_sale_status(event_id, SaleStatus.LIVE)
     return {"status": SaleStatus.LIVE}
 
-@router.post("/{event_id}/unpublish")
+@router.post("/{event_id}/unpublish", response_model=StatusResponse)
 async def unpublish_sale(
     event_id: str,
     firestore: FirestoreDep,
@@ -187,7 +190,7 @@ async def unpublish_sale(
 
 # --- INVENTORY CRUD ---
 
-@router.post("/{event_id}/bundles")
+@router.post("/{event_id}/bundles", response_model=BundleCreateResponse)
 async def add_bundle(
     event_id: str,
     payload: BundleCreateRequest,
@@ -198,7 +201,7 @@ async def add_bundle(
     return {"bundle_id": bundle_id}
 
 
-@router.delete("/{event_id}/bundles/{bundle_id}")
+@router.delete("/{event_id}/bundles/{bundle_id}", response_model=StatusResponse)
 async def remove_bundle(
     event_id: str,
     bundle_id: str,
@@ -209,7 +212,7 @@ async def remove_bundle(
     return {"status": "deleted"}
 
 
-@router.post("/{event_id}/bundles/{bundle_id}/items")
+@router.post("/{event_id}/bundles/{bundle_id}/items", response_model=ItemCreateResponse)
 async def add_manual_item(
     event_id: str,
     bundle_id: str,
@@ -222,21 +225,18 @@ async def add_manual_item(
     return {"item_id": item_id}
 
 
-@router.patch("/{event_id}/bundles/{bundle_id}/items/{item_id}")
+@router.patch("/{event_id}/bundles/{bundle_id}/items/{item_id}", response_model=StatusResponse)
 async def update_item(
     event_id: str,
     bundle_id: str,
     item_id: str,
-    updates: Dict[str, Any],
+    payload: ItemUpdate,
     firestore: FirestoreDep,
     _: dict = Depends(validate_sale_owner),
 ):
-    # Basic validation for numeric fields to prevent DB corruption and 500 errors
-    if "actual_listing_price" in updates and updates["actual_listing_price"] is not None:
-        try:
-            updates["actual_listing_price"] = float(updates["actual_listing_price"])
-        except (ValueError, TypeError):
-            raise HTTPException(status_code=422, detail="actual_listing_price must be a numeric value")
+    updates = payload.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(status_code=422, detail="No valid fields provided")
 
     await firestore.update_item_data(event_id, bundle_id, item_id, updates)
 
@@ -252,7 +252,7 @@ async def update_item(
     return {"status": "updated"}
 
 
-@router.delete("/{event_id}/bundles/{bundle_id}/items/{item_id}")
+@router.delete("/{event_id}/bundles/{bundle_id}/items/{item_id}", response_model=StatusResponse)
 async def remove_item(
     event_id: str,
     bundle_id: str,
