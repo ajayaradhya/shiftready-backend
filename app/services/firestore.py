@@ -1,4 +1,3 @@
-from typing import Optional
 from google.cloud import firestore
 
 from app.core.config import settings
@@ -31,54 +30,60 @@ class FirestoreService:
         self.marketplace = MarketplaceRepo(db)
 
     # --- user ---
-    async def upsert_user(self, user_id: str, email: str, name: Optional[str] = None):
+    async def upsert_user(self, user_id: str, email: str, name: str | None = None) -> None:
         return await self.users.upsert_user(user_id, email, name)
 
     # --- sale ---
     async def create_sale_event(self, user_id: str, video_url: str) -> str:
         return await self.sales.create_sale_event(user_id, video_url)
 
-    async def get_sale_event(self, event_id: str):
+    async def get_sale_event(self, event_id: str) -> dict | None:
         return await self.sales.get_sale_event(event_id)
 
-    async def transition_sale_status(self, event_id: str, new_status: SaleStatus):
+    async def transition_sale_status(self, event_id: str, new_status: SaleStatus) -> bool:
         return await self.sales.transition_sale_status(event_id, new_status)
 
-    async def update_sale_metadata(self, event_id: str, updates: dict):
+    async def update_sale_metadata(self, event_id: str, updates: dict) -> None:
         return await self.sales.update_sale_metadata(event_id, updates)
 
-    async def list_all_sales(self, user_id: str):
+    async def list_all_sales(self, user_id: str) -> list[dict]:
         return await self.sales.list_all_sales(user_id)
 
-    async def get_full_event_summary(self, event_id: str):
+    async def get_full_event_summary(self, event_id: str) -> dict | None:
         return await self.sales.get_full_event_summary(event_id)
 
     # --- bundle ---
     async def add_bundle(self, event_id: str, bundle_name: str, suggested_price: float = 0.0) -> str:
         return await self.bundles.add_bundle(event_id, bundle_name, suggested_price)
 
-    async def update_bundle_metadata(self, event_id: str, bundle_id: str, updates: dict):
+    async def update_bundle_metadata(self, event_id: str, bundle_id: str, updates: dict) -> None:
         return await self.bundles.update_bundle_metadata(event_id, bundle_id, updates)
 
-    async def delete_bundle(self, event_id: str, bundle_id: str):
+    async def delete_bundle(self, event_id: str, bundle_id: str) -> bool:
         return await self.bundles.delete_bundle(event_id, bundle_id)
 
-    async def recalculate_bundle_total(self, event_id: str, bundle_id: str):
+    async def recalculate_bundle_total(self, event_id: str, bundle_id: str) -> float:
         return await self.bundles.recalculate_bundle_total(event_id, bundle_id)
 
     # --- item ---
-    async def add_item_to_bundle(self, event_id: str, bundle_id: str, item_data: dict):
+    async def add_item_to_bundle(self, event_id: str, bundle_id: str, item_data: dict) -> str:
         return await self.items.add_item_to_bundle(event_id, bundle_id, item_data)
 
-    async def update_item_data(self, event_id: str, bundle_id: str, item_id: str, updates: dict):
+    async def update_item_data(
+        self, event_id: str, bundle_id: str, item_id: str, updates: dict
+    ) -> None:
         return await self.items.update_item_data(event_id, bundle_id, item_id, updates)
 
-    async def delete_item(self, event_id: str, bundle_id: str, item_id: str):
+    async def delete_item(self, event_id: str, bundle_id: str, item_id: str) -> bool:
         return await self.items.delete_item(event_id, bundle_id, item_id)
 
-    async def get_item_standalone(self, event_id: str, bundle_id: str, item_id: str):
+    async def get_item_standalone(
+        self, event_id: str, bundle_id: str, item_id: str
+    ) -> dict | None:
         return await self.items.get_item_standalone(event_id, bundle_id, item_id)
 
     # --- marketplace ---
-    async def get_active_inventory(self, suburb=None, query=None):
+    async def get_active_inventory(
+        self, suburb: str | None = None, query: str | None = None
+    ) -> list[dict]:
         return await self.marketplace.get_active_inventory(suburb=suburb, query=query)

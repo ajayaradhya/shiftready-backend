@@ -201,4 +201,5 @@ async def test_item_detail_authenticated_fields(client, marketplace_data):
 
 async def test_item_detail_not_found(client):
     r = await client.get("/api/v1/marketplace/items/no/such/item")
-    assert r.json().get("error") == "Item not found"
+    assert r.status_code == 404
+    assert r.json()["detail"] == "Item not found"

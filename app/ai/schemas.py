@@ -1,4 +1,3 @@
-from typing import List
 from pydantic import BaseModel, Field
 
 
@@ -11,4 +10,4 @@ class PricingResult(BaseModel):
 
 class PricingList(BaseModel):
     """Wrapper list returned by the pricing prompt."""
-    results: List[PricingResult]
+    results: list[PricingResult]

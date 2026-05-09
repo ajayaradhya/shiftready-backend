@@ -1,5 +1,4 @@
 import asyncio
-from typing import Optional
 from google.cloud import firestore
 
 from app.domain.status import SaleStatus
@@ -10,7 +9,7 @@ class MarketplaceRepo:
         self.db = db
 
     async def get_active_inventory(
-        self, suburb: Optional[str] = None, query: Optional[str] = None
+        self, suburb: str | None = None, query: str | None = None
     ) -> list[dict]:
         sales_query = self.db.collection("saleEvents").where(
             filter=firestore.FieldFilter("status", "==", SaleStatus.LIVE)
@@ -67,7 +66,7 @@ class MarketplaceRepo:
 
     async def get_item_standalone(
         self, event_id: str, bundle_id: str, item_id: str
-    ) -> Optional[dict]:
+    ) -> dict | None:
         doc = await (
             self.db.collection("saleEvents").document(event_id)
                    .collection("bundles").document(bundle_id)

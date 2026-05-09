@@ -1,5 +1,5 @@
 import os
-from typing import Annotated, Optional
+from typing import Annotated
 
 import firebase_admin
 from firebase_admin import auth
@@ -21,19 +21,19 @@ security = HTTPBearer(auto_error=False)
 class User(BaseModel):
     id: str
     email: str
-    name: Optional[str] = None
+    name: str | None = None
 
 
 async def get_current_user(
     connection: HTTPConnection,
-    token: Optional[str] = Query(None),
+    token: str | None = Query(None),
     firestore: FirestoreDep = None,
 ) -> User:
     """
     Verifies the Firebase ID Token from Bearer header or ?token= query param.
     Compatible with both HTTP and WebSocket connections.
     """
-    id_token: Optional[str] = None
+    id_token: str | None = None
 
     auth_header = connection.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
@@ -86,9 +86,9 @@ async def validate_sale_owner(
 
 async def get_optional_user(
     connection: HTTPConnection,
-    token: Optional[str] = Query(None),
+    token: str | None = Query(None),
     firestore: FirestoreDep = None,
-) -> Optional[User]:
+) -> User | None:
     """Allows anonymous browsing; returns None when no valid token is present."""
     try:
         return await get_current_user(connection, token, firestore)

@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 from google.cloud import firestore
 
 from app.domain.status import SaleStatus
@@ -24,7 +23,7 @@ class SaleRepo:
         })
         return doc_ref.id
 
-    async def get_sale_event(self, event_id: str) -> Optional[dict]:
+    async def get_sale_event(self, event_id: str) -> dict | None:
         doc = await self._ref(event_id).get()
         return doc.to_dict() if doc.exists else None
 
@@ -51,7 +50,7 @@ class SaleRepo:
         )
         return [{**d.to_dict(), "id": d.id} async for d in docs]
 
-    async def get_full_event_summary(self, event_id: str) -> Optional[dict]:
+    async def get_full_event_summary(self, event_id: str) -> dict | None:
         event_ref = self._ref(event_id)
         event_doc = await event_ref.get()
         if not event_doc.exists:

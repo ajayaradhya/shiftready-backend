@@ -1,6 +1,8 @@
 from google import genai
 
-MODEL_ID = "gemini-3.1-flash-lite-preview"
+from app.core.config import settings
+
+MODEL_ID = settings.gemini_model_id
 
 SYSTEM_INSTRUCTION = (
     "You are the ShiftReady Relocation Agent. You specialize in the Sydney 2026 "
@@ -11,4 +13,4 @@ SYSTEM_INSTRUCTION = (
 
 
 def create_client(project_id: str) -> genai.Client:
-    return genai.Client(vertexai=True, project=project_id, location="global")
+    return genai.Client(vertexai=True, project=project_id, location=settings.gemini_location)
