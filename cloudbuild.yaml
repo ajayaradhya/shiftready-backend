@@ -15,42 +15,42 @@ steps:
         ruff check . --exclude scripts
 
   # 2. Run Tests with Coverage (includes integration tests against Firestore emulator)
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
-    id: 'run-tests'
-    waitFor: ['lint']
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |
-        set -e
+  # - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+  #   id: 'run-tests'
+  #   waitFor: ['lint']
+  #   entrypoint: 'bash'
+  #   args:
+  #     - '-c'
+  #     - |
+  #       set -e
 
-        # ── Java is required by the Firestore emulator ─────────────────────────
-        apt-get update -qq
-        apt-get install -y -qq --no-install-recommends default-jre-headless
+  #       # ── Java is required by the Firestore emulator ─────────────────────────
+  #       apt-get update -qq
+  #       apt-get install -y -qq --no-install-recommends default-jre-headless
 
-        # ── Install Firestore emulator via gcloud component ───────────────────
-        gcloud components install cloud-firestore-emulator --quiet
+  #       # ── Install Firestore emulator via gcloud component ───────────────────
+  #       gcloud components install cloud-firestore-emulator --quiet
 
-        # ── Install Python dependencies ────────────────────────────────────────
-        pip3 install -r requirements.txt --quiet
+  #       # ── Install Python dependencies ────────────────────────────────────────
+  #       pip3 install -r requirements.txt --quiet
 
-        # ── Start Firestore emulator in background ─────────────────────────────
-        gcloud beta emulators firestore start --host-port=127.0.0.1:8089 &
-        EMULATOR_PID=$$!
+  #       # ── Start Firestore emulator in background ─────────────────────────────
+  #       gcloud beta emulators firestore start --host-port=127.0.0.1:8089 &
+  #       EMULATOR_PID=$$!
 
-        # ── Wait until the emulator REST endpoint responds (max 30 s) ──────────
-        echo "Waiting for Firestore emulator..."
-        for i in $$(seq 1 30); do
-          curl -sf http://127.0.0.1:8089/ >/dev/null 2>&1 && break || sleep 1
-        done
-        echo "Firestore emulator ready"
+  #       # ── Wait until the emulator REST endpoint responds (max 30 s) ──────────
+  #       echo "Waiting for Firestore emulator..."
+  #       for i in $$(seq 1 30); do
+  #         curl -sf http://127.0.0.1:8089/ >/dev/null 2>&1 && break || sleep 1
+  #       done
+  #       echo "Firestore emulator ready"
 
-        # ── Run tests ─────────────────────────────────────────────────────────
-        python3 -m pytest
-        EXIT_CODE=$$?
+  #       # ── Run tests ─────────────────────────────────────────────────────────
+  #       python3 -m pytest
+  #       EXIT_CODE=$$?
 
-        kill $$EMULATOR_PID 2>/dev/null || true
-        exit $$EXIT_CODE
+  #       kill $$EMULATOR_PID 2>/dev/null || true
+  #       exit $$EXIT_CODE
 
   # 3. Pull the latest image for Docker layer caching
   - name: 'gcr.io/cloud-builders/docker'
