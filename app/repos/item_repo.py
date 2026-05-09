@@ -1,4 +1,3 @@
-from typing import Optional
 from google.cloud import firestore
 
 from app.repos.bundle_repo import BundleRepo
@@ -43,6 +42,6 @@ class ItemRepo:
 
     async def get_item_standalone(
         self, event_id: str, bundle_id: str, item_id: str
-    ) -> Optional[dict]:
+    ) -> dict | None:
         doc = await self._item_ref(event_id, bundle_id, item_id).get()
         return {**doc.to_dict(), "id": doc.id} if doc.exists else None

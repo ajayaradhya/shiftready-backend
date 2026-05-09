@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -53,8 +52,8 @@ class ItemCreateRequest(BaseModel):
     confidence: float = 1.0  # Manual items are 100% verified by default
     timestamp_label: str = "Manual Entry"
     video_timestamp: int = 0
-    dimensions: Optional[str] = None
-    material: Optional[str] = None
+    dimensions: str | None = None
+    material: str | None = None
     is_fragile: bool = False
     disassembly_required: bool = False
 
@@ -65,16 +64,16 @@ class ItemCreateResponse(BaseModel):
 
 class ItemUpdate(BaseModel):
     """Strict schema for PATCH operations to avoid overwriting unrelated fields."""
-    name: Optional[str] = None
-    brand: Optional[str] = None
-    actual_listing_price: Optional[float] = None
-    actual_original_price: Optional[float] = None
-    actual_year_of_purchase: Optional[int] = None
-    condition: Optional[str] = None
-    dimensions: Optional[str] = None
-    material: Optional[str] = None
-    is_fragile: Optional[bool] = None
-    disassembly_required: Optional[bool] = None
+    name: str | None = None
+    brand: str | None = None
+    actual_listing_price: float | None = None
+    actual_original_price: float | None = None
+    actual_year_of_purchase: int | None = None
+    condition: str | None = None
+    dimensions: str | None = None
+    material: str | None = None
+    is_fragile: bool | None = None
+    disassembly_required: bool | None = None
 
 
 # --- Generic Responses ---
@@ -90,10 +89,10 @@ class SaleStatusResponse(BaseModel):
     id: str
     status: SaleStatus
     sellerId: str
-    suburb: Optional[str] = None
-    street_address: Optional[str] = None
-    pincode: Optional[str] = None
-    state: Optional[str] = "NSW"
+    suburb: str | None = None
+    street_address: str | None = None
+    pincode: str | None = None
+    state: str | None = "NSW"
     createdAt: datetime
     itemCount: int = 0
     totalValue: float = 0.0
