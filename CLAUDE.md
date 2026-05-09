@@ -4,9 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**ShiftReady Backend** is a FastAPI service that automates residential relocation inventory management using Google Gemini AI. It orchestrates a multi-stage pipeline: video intake → AI vision extraction → user review → AI pricing → marketplace publication.
+**ShiftReady** is a full-stack application that automates residential relocation inventory management using Google Gemini AI.
 
-Deployed on Cloud Run (Sydney region), with Firestore as the database and Firebase for authentication.
+- **Backend** (`shiftready-backend/`): FastAPI service orchestrating the pipeline: video intake → AI vision extraction → user review → AI pricing → marketplace publication. Deployed on Cloud Run (Sydney region), Firestore as DB, Firebase Auth.
+- **Frontend** (`../shiftready-ui/`): Next.js 16 / React 19 SPA, sibling directory to this repo. Launched with `--add-dir ../shiftready-ui` so both repos are editable in the same session.
+
+Always launch Claude from the backend directory with:
+```
+claude --add-dir ../shiftready-ui
+```
 
 ## Commands
 
@@ -107,3 +113,86 @@ GOOGLE_APPLICATION_CREDENTIALS=./shiftready-backend-service-account.json
 
 - `GEMINI.md` — Gemini/Vertex AI setup, prompt engineering, schema strategies
 - `FRONTEND_AUTH_INTEGRATION.md` — Firebase Client SDK setup and WebSocket auth patterns
+
+---
+
+## Frontend (shiftready-ui)
+
+Next.js 16.2.4 · React 19 · TypeScript · TanStack Query v5 · Tailwind v4 · lucide-react · clsx · tailwind-merge
+
+### Directory Structure
+
+```
+src/
+├── app/                        # Next.js App Router pages
+│   ├── layout.tsx              # Root layout: Providers + Sidebar + Header
+│   ├── page.tsx                # Home
+│   ├── create/page.tsx         # Video upload + sale init
+│   └── inventory/[eventId]/page.tsx  # Inventory review cockpit
+├── components/
+│   ├── providers.tsx           # QueryClientProvider (+ ReactQueryDevtools)
+│   ├── ui/
+│   │   ├── sidebar.tsx         # Fixed left nav (w-64)
+│   │   └── header.tsx          # Fixed top bar (h-16)
+│   └── features/
+│       ├── create/             # Video uploader, capture guide
+│       └── inventory/          # Inventory cards, pricing grid, delete overlay
+├── hooks/
+│   └── use-inventory.tsx       # Core hook: status polling + summary fetch + mutations
+└── lib/
+    ├── api.ts                  # Centralized fetch wrapper; all API calls live here
+    └── types.ts                # InventoryItem, RoomBundle, SaleSummary interfaces
+```
+
+### Adding a New Page
+
+1. Create `src/app/<route>/page.tsx` (App Router — no `pages/` directory).
+2. Add any new API calls to `src/lib/api.ts` following the existing pattern.
+3. Add corresponding TypeScript types to `src/lib/types.ts`.
+4. If the page needs data fetching, create a hook in `src/hooks/` using TanStack Query.
+
+### API Client (`src/lib/api.ts`)
+
+- Base URL from `NEXT_PUBLIC_API_URL`; falls back to the Cloud Run URL.
+- Central `apiRequest<T>()` wrapper handles errors (parses FastAPI's `detail` field) and 204 No Content.
+- **No auth headers yet** — the UI currently hits the API without tokens. Backend auth bypass is active in local dev (`K_SERVICE` absent). Full Firebase token integration is documented in `FRONTEND_AUTH_INTEGRATION.md`.
+- All functions follow: `` `${API_BASE}/sales/${eventId}/...` ``
+
+### TanStack Query Conventions
+
+- `QueryClient` is instantiated once in `providers.tsx` with default config.
+- Polling is conditional — `use-inventory.tsx` polls every 1500 ms only during `processing` or `pricing_in_progress` states.
+- All mutations call `queryClient.invalidateQueries` on success to keep UI in sync.
+- Use `staleTime: 5 * 60 * 1000` for data that doesn't change during AI processing.
+
+### Design System
+
+- **Dark-only** — `<html className="dark">` is hardcoded; no light mode.
+- **Tailwind v4** — config is in `src/app/globals.css` via `@theme {}`, not `tailwind.config.js`.
+- **Layout**: main content has `pl-64` (sidebar) + `pt-16` (header) — don't override these on new pages.
+- **Key CSS variables** (use via Tailwind utility classes):
+  - `bg-surface`, `bg-surface-container-low/high/lowest/highest`
+  - `text-on-surface`, `text-on-surface-variant`
+  - `text-primary` (#adc6ff electric blue), `text-tertiary` (#4edea3 green for pricing)
+  - `border-outline`, `border-outline-variant`
+- **Icons**: lucide-react only — do not introduce other icon libraries.
+- **Class merging**: use `clsx` + `tailwind-merge` (`cn()` pattern) for conditional classes.
+
+### Frontend Commands
+
+```bash
+# Run dev server (from shiftready-ui directory)
+npm run dev        # starts on http://localhost:3000
+
+# Lint
+npm run lint
+
+# Build
+npm run build
+```
+
+### Environment Variables (UI)
+
+```
+NEXT_PUBLIC_API_URL=http://localhost:8080   # point to local backend during dev
+```
