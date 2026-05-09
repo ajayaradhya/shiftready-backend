@@ -1,24 +1,26 @@
-from pydantic import BaseModel, Field
-from typing import Optional
 from datetime import datetime
+from typing import Optional
 
-from app.domain.status import SaleStatus  # re-exported for backward compatibility
+from pydantic import BaseModel, Field
 
-# --- Constants for Defaults ---
-CURRENT_YEAR = datetime.now().year
+from app.domain.status import SaleStatus
+
 
 # --- Sale Initialization ---
 
 class SaleInitRequest(BaseModel):
     filename: str
 
+
 class SaleInitResponse(BaseModel):
     event_id: str
     upload_url: str
     gcs_uri: str
 
+
 class PriceEstimationRequest(BaseModel):
     move_out_date: str
+
 
 class SalePublishRequest(BaseModel):
     move_out_date: str
@@ -27,31 +29,18 @@ class SalePublishRequest(BaseModel):
     pincode: str
     state: str = "NSW"
 
-# --- Bundle Schemas ---
 
-class BundleBase(BaseModel):
-    name: str
-    suggestedPrice: float = 0.0
+# --- Bundle Schemas ---
 
 class BundleCreateRequest(BaseModel):
     name: str
 
-# --- Item Schemas ---
 
-class ItemBase(BaseModel):
-    name: str
-    brand: Optional[str] = "Unknown"
-    condition: str = "Good"
-    actual_listing_price: float = 0.0
-    actual_original_price: float = 0.0
-    actual_year_of_purchase: Optional[int] = None
-    timestamp_label: str = "Manual Entry"
-    video_timestamp: float = 0.0
-    confidence: float = 1.0
-    dimensions: Optional[str] = None
-    material: Optional[str] = None
-    is_fragile: bool = False
-    disassembly_required: bool = False
+class BundleCreateResponse(BaseModel):
+    bundle_id: str
+
+
+# --- Item Schemas ---
 
 class ItemCreateRequest(BaseModel):
     """Used for adding manual assets the AI might have missed."""
@@ -59,7 +48,7 @@ class ItemCreateRequest(BaseModel):
     brand: str = "Unknown"
     actual_listing_price: float = 0.0
     actual_original_price: float = 0.0
-    actual_year_of_purchase: int = Field(default=CURRENT_YEAR)
+    actual_year_of_purchase: int = Field(default_factory=lambda: datetime.now().year)
     condition: str = "Good"
     confidence: float = 1.0  # Manual items are 100% verified by default
     timestamp_label: str = "Manual Entry"
@@ -68,6 +57,11 @@ class ItemCreateRequest(BaseModel):
     material: Optional[str] = None
     is_fragile: bool = False
     disassembly_required: bool = False
+
+
+class ItemCreateResponse(BaseModel):
+    item_id: str
+
 
 class ItemUpdate(BaseModel):
     """Strict schema for PATCH operations to avoid overwriting unrelated fields."""
@@ -81,6 +75,14 @@ class ItemUpdate(BaseModel):
     material: Optional[str] = None
     is_fragile: Optional[bool] = None
     disassembly_required: Optional[bool] = None
+
+
+# --- Generic Responses ---
+
+class StatusResponse(BaseModel):
+    """Generic single-field status response (e.g. deleted, updated, processing_started)."""
+    status: str
+
 
 # --- Response / Dashboard Schemas ---
 
