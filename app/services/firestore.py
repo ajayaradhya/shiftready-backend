@@ -83,6 +83,9 @@ class FirestoreService:
         return await self.items.get_item_standalone(event_id, bundle_id, item_id)
 
     # --- marketplace ---
+    async def list_live_sales(self) -> list[dict]:
+        return await self.marketplace.list_live_sales()
+
     async def get_active_inventory(
         self, suburb: str | None = None, query: str | None = None
     ) -> list[dict]:
