@@ -47,6 +47,19 @@ async def search_marketplace(
     }
 
 
+@router.get("/sales/{event_id}")
+async def get_public_sale(
+    event_id: str,
+    firestore: FirestoreDep,
+    user: User | None = Depends(get_optional_user),
+):
+    """Public sale detail page — bundles + items for a single LIVE sale."""
+    sale = await firestore.marketplace.get_public_sale(event_id)
+    if not sale:
+        raise HTTPException(status_code=404, detail="Sale not found")
+    return {**sale, "is_authenticated": user is not None}
+
+
 @router.get("/items/{event_id}/{bundle_id}/{item_id}")
 async def get_item_detail(
     event_id: str,
