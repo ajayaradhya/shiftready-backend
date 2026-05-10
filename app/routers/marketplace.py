@@ -6,6 +6,12 @@ from app.services.auth import get_optional_user, User
 router = APIRouter(prefix="/marketplace", tags=["Marketplace"])
 
 
+@router.get("/sales")
+async def list_live_sales(firestore: FirestoreDep):
+    """List all LIVE sales — used by the landing page sales scroll."""
+    return await firestore.list_live_sales()
+
+
 @router.get("/search")
 async def search_marketplace(
     firestore: FirestoreDep,

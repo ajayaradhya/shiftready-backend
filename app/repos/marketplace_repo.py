@@ -74,6 +74,51 @@ class MarketplaceRepo:
         )
         return {**doc.to_dict(), "id": doc.id} if doc.exists else None
 
+    async def list_live_sales(self) -> list[dict]:
+        """Return summary rows for every LIVE sale — used by the landing page sales scroll."""
+        live_docs = await (
+            self.db.collection("saleEvents")
+            .where(filter=firestore.FieldFilter("status", "==", SaleStatus.LIVE))
+            .limit(20)
+            .get()
+        )
+        if not live_docs:
+            return []
+
+        # Fetch all bundle sub-collections concurrently to get item counts + min price
+        bundle_snapshots = await asyncio.gather(*[
+            self.db.collection("saleEvents").document(doc.id)
+                   .collection("bundles").get()
+            for doc in live_docs
+        ])
+
+        item_snapshots = await asyncio.gather(*[
+            asyncio.gather(*[
+                bundle.reference.collection("items").get()
+                for bundle in bundles
+            ])
+            for bundles in bundle_snapshots
+        ])
+
+        results = []
+        for sale_doc, bundles, per_bundle_items in zip(live_docs, bundle_snapshots, item_snapshots):
+            data = sale_doc.to_dict()
+            all_items = [item for items in per_bundle_items for item in items]
+            prices = [
+                i.to_dict().get("actual_listing_price")
+                for i in all_items
+                if i.to_dict().get("actual_listing_price") is not None
+            ]
+            results.append({
+                "eventId": sale_doc.id,
+                "suburb": data.get("suburb"),
+                "state": data.get("state"),
+                "itemCount": len(all_items),
+                "minPrice": min(prices) if prices else None,
+                "publishedAt": data.get("publishedAt"),
+            })
+        return results
+
     async def get_public_sale(self, event_id: str) -> dict | None:
         sale_doc = await self.db.collection("saleEvents").document(event_id).get()
         if not sale_doc.exists:

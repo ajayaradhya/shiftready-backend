@@ -103,6 +103,22 @@ async def search(client, *, q=None, suburb=None, headers=None):
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
+async def test_list_live_sales(client, marketplace_data):
+    r = await client.get("/api/v1/marketplace/sales")
+    assert r.status_code == 200
+    body = r.json()
+    assert isinstance(body, list)
+    event_ids = {s["eventId"] for s in body}
+    assert "event_waterloo" in event_ids
+    assert "event_zetland" in event_ids
+    assert "event_hidden" not in event_ids
+
+    waterloo = next(s for s in body if s["eventId"] == "event_waterloo")
+    assert waterloo["suburb"] == "Waterloo"
+    assert waterloo["itemCount"] == 2
+    assert waterloo["minPrice"] == 50.0
+
+
 async def test_live_sales_appear_in_search(client, marketplace_data):
     r = await search(client)
     assert r.status_code == 200
