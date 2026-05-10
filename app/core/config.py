@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     gemini_model_id: str = "gemini-3.1-flash-lite-preview"
     gemini_location: str = "global"
 
+    google_application_credentials: str = ""
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
