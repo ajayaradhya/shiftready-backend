@@ -15,8 +15,11 @@ Analyze this video and identify sellable items.
 Organize items into Room Bundles (e.g., 'Living Room', 'Kitchen').
 
 TEMPORAL RULES:
-- Identify the midpoint 'timestamp_label' in "MM:SS".
-- Focus on clarity. If an item is blurry, wait for a clear frame.
+- Set 'timestamp_label' (format "MM:SS") to the single moment the item is MOST clearly
+  visible: camera stationary or slow-panning, item centered in frame, well-lit, unobstructed
+  by hands or other objects, no motion blur. This timestamp is used to extract a still frame
+  that will be shown to buyers, so accuracy matters.
+- If an item appears multiple times, choose the clearest appearance.
 
 DATING & PRICING:
 - Predict 'predicted_original_price' in AUD.

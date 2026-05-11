@@ -1,5 +1,6 @@
 fastapi
 pydantic-settings
+google-cloud-run
 uvicorn
 google-cloud-storage
 google-cloud-firestore
