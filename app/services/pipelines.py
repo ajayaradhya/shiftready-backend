@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from app.domain.status import SaleStatus
 from app.services.firestore import FirestoreService
 from app.services.gemini import GeminiProcessor
+from app.services.jobs import trigger_frame_extraction
 from app.services.notifier import notifier
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,12 @@ async def run_extraction_pipeline(
         })
 
         logger.info(f"Extraction pipeline success | event={event_id} | {time.perf_counter() - start:.2f}s")
+
+        try:
+            await trigger_frame_extraction(event_id)
+            logger.info(f"Frame extraction job triggered | event={event_id}")
+        except Exception as exc:
+            logger.warning(f"Frame extraction job trigger failed (non-fatal) | event={event_id}: {exc}")
 
     except Exception as exc:
         logger.exception(f"Extraction pipeline failed for event {event_id}")

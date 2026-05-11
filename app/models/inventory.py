@@ -32,6 +32,9 @@ class InventoryItem(BaseModel):
     is_fragile: bool = False
     disassembly_required: bool = False
 
+    # --- Media ---
+    frame_gcs_path: str | None = None   # gs:// path; converted to signed URL on read
+
 class RoomBundle(BaseModel):
     id: str | None = None
     bundle_name: str

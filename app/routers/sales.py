@@ -87,6 +87,14 @@ async def get_sale_summary(
     if gcs_uri and gcs_uri.startswith("gs://"):
         stripped = gcs_uri.replace("gs://", "").split("/", 1)
         summary["videoUrl"] = gcs.generate_download_url(stripped[0], stripped[1])
+
+    for bundle in summary.get("bundles", []):
+        for item in bundle.get("items", []):
+            frame_path = item.get("frame_gcs_path")
+            if frame_path and frame_path.startswith("gs://"):
+                stripped = frame_path.replace("gs://", "").split("/", 1)
+                item["frame_url"] = gcs.generate_download_url(stripped[0], stripped[1])
+
     return summary
 
 
