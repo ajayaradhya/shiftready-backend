@@ -75,7 +75,7 @@ steps:
     args: ['push', '--all-tags', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE_NAME}']
 
   # 6. Deploy Firestore indexes
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  - name: 'node:20-slim'
     id: 'deploy-indexes'
     waitFor: ['push-image']
     entrypoint: 'bash'
