@@ -65,7 +65,7 @@ async def run_extraction_pipeline(
             await trigger_frame_extraction(event_id)
             logger.info(f"Frame extraction job triggered | event={event_id}")
         except Exception as exc:
-            logger.warning(f"Frame extraction job trigger failed (non-fatal) | event={event_id}: {exc}")
+            logger.error(f"Failed to trigger frame extraction | event={event_id} | error={str(exc)}")
 
     except Exception as exc:
         logger.exception(f"Extraction pipeline failed for event {event_id}")

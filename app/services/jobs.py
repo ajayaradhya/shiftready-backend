@@ -23,13 +23,28 @@ async def trigger_frame_extraction(event_id: str) -> None:
 
 def _trigger_local_subprocess(event_id: str) -> None:
     import subprocess
+    from app.core.config import settings
 
     script = Path(__file__).parents[2] / "jobs" / "frame_extractor" / "main.py"
     if not script.exists():
         logger.warning(f"frame_extractor script not found at {script} — skipping local trigger")
         return
 
-    env = {**os.environ, "EVENT_ID": event_id}
+    # Explicitly pass settings to subprocess environment
+    env = {
+        **os.environ,
+        "EVENT_ID": event_id,
+        "GCP_PROJECT_ID": settings.gcp_project_id,
+        "GCP_UPLOAD_BUCKET": settings.gcp_upload_bucket,
+    }
+
+    # Allow passing local ffmpeg path from settings if defined in your .env
+    if hasattr(settings, "ffmpeg_path") and settings.ffmpeg_path:
+        env["FFMPEG_PATH"] = settings.ffmpeg_path
+
+    if settings.google_application_credentials:
+        env["GOOGLE_APPLICATION_CREDENTIALS"] = settings.google_application_credentials
+
     subprocess.Popen([sys.executable, str(script)], env=env)
     logger.info(f"frame_extraction | local subprocess started | event={event_id} script={script}")
 

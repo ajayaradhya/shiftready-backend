@@ -18,6 +18,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 from google.cloud import firestore, storage
@@ -27,8 +28,6 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("frame_extractor")
-
-FRAMES_PREFIX = "frames"
 
 
 def download_video(gcs_client: storage.Client, gcs_uri: str, dest: Path) -> None:
@@ -45,19 +44,28 @@ def extract_frame(video_path: Path, timestamp: float, output_path: Path) -> bool
     Fast-seek to timestamp then grab the first decoded frame.
     Pre-input -ss is fast (keyframe seek); acceptable accuracy for multi-second windows.
     """
+    ffmpeg_bin = os.environ.get("FFMPEG_PATH", "ffmpeg")
     cmd = [
-        "ffmpeg", "-y",
+        ffmpeg_bin, "-y",
         "-ss", f"{timestamp:.3f}",
         "-i", str(video_path),
         "-frames:v", "1",
+        "-an",                # Ignore audio stream for faster extraction
         "-q:v", "2",          # JPEG quality 2 = near-lossless (~95% quality)
         str(output_path),
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.error(
+                f"ffmpeg failed | ts={timestamp:.3f} | "
+                f"stderr={result.stderr[-500:] if result.stderr else 'empty'}"
+            )
+            return False
+    except (FileNotFoundError, PermissionError):
         logger.error(
-            f"ffmpeg failed | ts={timestamp:.3f} | "
-            f"stderr={result.stderr[-500:] if result.stderr else 'empty'}"
+            f"ffmpeg execution failed: '{ffmpeg_bin}'. "
+            "On Windows, ensure FFMPEG_PATH points to the ffmpeg.exe file, not just the bin folder."
         )
         return False
     logger.debug(f"frame extracted | ts={timestamp:.3f} → {output_path.name}")
@@ -73,6 +81,20 @@ def upload_frame(
     blob = gcs_client.bucket(bucket_name).blob(gcs_path)
     blob.upload_from_filename(str(local_path), content_type="image/jpeg")
     return f"gs://{bucket_name}/{gcs_path}"
+
+
+def verify_ffmpeg() -> bool:
+    ffmpeg_bin = os.environ.get("FFMPEG_PATH", "ffmpeg")
+    try:
+        subprocess.run([ffmpeg_bin, "-version"], capture_output=True, check=True)
+        return True
+    except (FileNotFoundError, subprocess.CalledProcessError, PermissionError) as e:
+        if isinstance(e, PermissionError):
+            logger.error(
+                f"Permission denied for '{ffmpeg_bin}'. "
+                "Check if FFMPEG_PATH points to a directory. It must point to the executable file (ffmpeg.exe)."
+            )
+        return False
 
 
 def process_event(event_id: str, project_id: str, upload_bucket: str) -> None:
@@ -116,8 +138,10 @@ def process_event(event_id: str, project_id: str, upload_bucket: str) -> None:
                     fail_count += 1
                     continue
 
-                frame_local = tmp / f"{item_id}.jpg"
-                gcs_frame_path = f"{FRAMES_PREFIX}/{event_id}/{item_id}.jpg"
+                frame_local = tmp / f"frame_{item_id}.jpg"
+
+                # Future-Proof Pathing: All assets for an item are now grouped in one folder
+                gcs_frame_path = f"sales/{event_id}/items/{item_id}/extracted_frame.jpg"
 
                 try:
                     if not extract_frame(video_path, float(timestamp), frame_local):
@@ -126,9 +150,18 @@ def process_event(event_id: str, project_id: str, upload_bucket: str) -> None:
 
                     full_gcs_path = upload_frame(gcs, upload_bucket, frame_local, gcs_frame_path)
 
+                    # Recommendation 1, 2, 3: Structured Metadata & Primary Flag
+                    image_obj = {
+                        "id": f"ext_{item_id}",
+                        "gcs_path": full_gcs_path,
+                        "source": "extracted",
+                        "is_primary": True,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                    }
+
                     item_doc.reference.update({
-                        "frame_gcs_path": full_gcs_path,
-                        "frameExtractedAt": firestore.SERVER_TIMESTAMP,
+                        "images": firestore.ArrayUnion([image_obj]),
+                        "frame_gcs_path": full_gcs_path, # Keep for backward compatibility
                     })
 
                     logger.info(
@@ -171,6 +204,13 @@ if __name__ == "__main__":
 
     if missing:
         logger.error(f"missing required env vars: {', '.join(missing)}")
+        sys.exit(1)
+
+    if not verify_ffmpeg():
+        logger.error(
+            f"ffmpeg not found or not working: '{os.environ.get('FFMPEG_PATH', 'ffmpeg')}'. "
+            "For local dev, add it to your PATH. For production, install it in your Dockerfile (apt-get install ffmpeg)."
+        )
         sys.exit(1)
 
     process_event(event_id, project_id, upload_bucket)

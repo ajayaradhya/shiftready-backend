@@ -95,6 +95,14 @@ async def get_sale_summary(
                 stripped = frame_path.replace("gs://", "").split("/", 1)
                 item["frame_url"] = gcs.generate_download_url(stripped[0], stripped[1])
 
+            # Process the structured images gallery
+            if "images" in item and isinstance(item["images"], list):
+                for img in item["images"]:
+                    img_path = img.get("gcs_path")
+                    if img_path and img_path.startswith("gs://"):
+                        s = img_path.replace("gs://", "").split("/", 1)
+                        img["url"] = gcs.generate_download_url(s[0], s[1])
+
     return summary
 
 
