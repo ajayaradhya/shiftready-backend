@@ -33,7 +33,7 @@ class InventoryItem(BaseModel):
     disassembly_required: bool = False
 
     # --- Media ---
-    frame_gcs_path: str | None = None   # gs:// path; converted to signed URL on read
+    # Images are stored separately in Firestore as images[] sub-array, not part of AI schema.
 
 class RoomBundle(BaseModel):
     id: str | None = None

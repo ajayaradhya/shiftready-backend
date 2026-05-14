@@ -76,6 +76,36 @@ class ItemUpdate(BaseModel):
     disassembly_required: bool | None = None
 
 
+# --- Item Image Schemas ---
+
+class ImageFileRequest(BaseModel):
+    filename: str
+    content_type: str = "image/jpeg"
+
+
+class ImageUploadUrlsRequest(BaseModel):
+    files: list[ImageFileRequest]
+
+
+class ImageUploadUrlItem(BaseModel):
+    image_id: str
+    upload_url: str
+    gcs_path: str
+
+
+class ImageUploadUrlsResponse(BaseModel):
+    urls: list[ImageUploadUrlItem]
+
+
+class ImageConfirmItem(BaseModel):
+    image_id: str
+    gcs_path: str
+
+
+class ImageConfirmRequest(BaseModel):
+    images: list[ImageConfirmItem]
+
+
 # --- Generic Responses ---
 
 class StatusResponse(BaseModel):

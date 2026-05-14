@@ -1,11 +1,15 @@
 import asyncio
+import mimetypes
+import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, WebSocket, WebSocketDisconnect
+from google.cloud.firestore import ArrayUnion
 
 from app.domain.status import SaleStatus
 from app.models.schemas import (
     BundleCreateRequest, BundleCreateResponse,
+    ImageConfirmRequest, ImageUploadUrlItem, ImageUploadUrlsRequest, ImageUploadUrlsResponse,
     ItemCreateRequest, ItemCreateResponse, ItemUpdate,
     PriceEstimationRequest,
     SaleInitRequest, SaleInitResponse, SalePublishRequest,
@@ -90,12 +94,6 @@ async def get_sale_summary(
 
     for bundle in summary.get("bundles", []):
         for item in bundle.get("items", []):
-            frame_path = item.get("frame_gcs_path")
-            if frame_path and frame_path.startswith("gs://"):
-                stripped = frame_path.replace("gs://", "").split("/", 1)
-                item["frame_url"] = gcs.generate_download_url(stripped[0], stripped[1])
-
-            # Process the structured images gallery
             if "images" in item and isinstance(item["images"], list):
                 for img in item["images"]:
                     img_path = img.get("gcs_path")
@@ -278,3 +276,127 @@ async def remove_item(
 ):
     await firestore.delete_item(event_id, bundle_id, item_id)
     return {"status": "deleted"}
+
+
+# --- ITEM IMAGE ENDPOINTS ---
+
+@router.post(
+    "/{event_id}/bundles/{bundle_id}/items/{item_id}/images/upload-urls",
+    response_model=ImageUploadUrlsResponse,
+)
+async def get_item_image_upload_urls(
+    event_id: str,
+    bundle_id: str,
+    item_id: str,
+    payload: ImageUploadUrlsRequest,
+    gcs: GCSDep,
+    bucket: BucketDep,
+    _: dict = Depends(validate_sale_owner),
+):
+    urls: list[ImageUploadUrlItem] = []
+    for f in payload.files:
+        image_id = str(uuid.uuid4())
+        ext = mimetypes.guess_extension(f.content_type) or ".jpg"
+        if ext == ".jpe":
+            ext = ".jpg"
+        blob_name = f"sales/{event_id}/items/{item_id}/{image_id}{ext}"
+        gcs_path = f"gs://{bucket}/{blob_name}"
+        upload_url = gcs.generate_image_upload_url(bucket, blob_name, f.content_type)
+        urls.append(ImageUploadUrlItem(image_id=image_id, upload_url=upload_url, gcs_path=gcs_path))
+    return ImageUploadUrlsResponse(urls=urls)
+
+
+@router.post(
+    "/{event_id}/bundles/{bundle_id}/items/{item_id}/images/confirm",
+    response_model=StatusResponse,
+)
+async def confirm_item_images(
+    event_id: str,
+    bundle_id: str,
+    item_id: str,
+    payload: ImageConfirmRequest,
+    firestore: FirestoreDep,
+    _: dict = Depends(validate_sale_owner),
+):
+    now = datetime.now(timezone.utc).isoformat()
+    for img in payload.images:
+        image_obj = {
+            "id": img.image_id,
+            "gcs_path": img.gcs_path,
+            "source": "user_upload",
+            "is_cover": False,
+            "uploaded_at": now,
+        }
+        await firestore.update_item_data(
+            event_id, bundle_id, item_id,
+            {"images": ArrayUnion([image_obj])},
+        )
+    return {"status": "confirmed"}
+
+
+@router.delete(
+    "/{event_id}/bundles/{bundle_id}/items/{item_id}/images/{image_id}",
+    response_model=StatusResponse,
+)
+async def delete_item_image(
+    event_id: str,
+    bundle_id: str,
+    item_id: str,
+    image_id: str,
+    firestore: FirestoreDep,
+    gcs: GCSDep,
+    bucket: BucketDep,
+    _: dict = Depends(validate_sale_owner),
+):
+    item = await firestore.get_item_standalone(event_id, bundle_id, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    images: list[dict] = item.get("images", [])
+    target = next((img for img in images if img.get("id") == image_id), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    gcs_path: str = target.get("gcs_path", "")
+    if gcs_path.startswith("gs://"):
+        blob_name = gcs_path.replace(f"gs://{bucket}/", "")
+        try:
+            gcs.delete_blob(bucket, blob_name)
+        except Exception:
+            pass  # GCS deletion is best-effort
+
+    was_cover = target.get("is_cover", False)
+    new_images = [img for img in images if img.get("id") != image_id]
+    if was_cover and new_images:
+        new_images[0]["is_cover"] = True
+
+    await firestore.update_item_data(event_id, bundle_id, item_id, {"images": new_images})
+    return {"status": "deleted"}
+
+
+@router.patch(
+    "/{event_id}/bundles/{bundle_id}/items/{item_id}/images/{image_id}/cover",
+    response_model=StatusResponse,
+)
+async def set_item_image_cover(
+    event_id: str,
+    bundle_id: str,
+    item_id: str,
+    image_id: str,
+    firestore: FirestoreDep,
+    _: dict = Depends(validate_sale_owner),
+):
+    item = await firestore.get_item_standalone(event_id, bundle_id, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    images: list[dict] = item.get("images", [])
+    if not any(img.get("id") == image_id for img in images):
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    new_images = [
+        {**img, "is_cover": img.get("id") == image_id}
+        for img in images
+    ]
+    await firestore.update_item_data(event_id, bundle_id, item_id, {"images": new_images})
+    return {"status": "updated"}

@@ -150,18 +150,16 @@ def process_event(event_id: str, project_id: str, upload_bucket: str) -> None:
 
                     full_gcs_path = upload_frame(gcs, upload_bucket, frame_local, gcs_frame_path)
 
-                    # Recommendation 1, 2, 3: Structured Metadata & Primary Flag
                     image_obj = {
                         "id": f"ext_{item_id}",
                         "gcs_path": full_gcs_path,
-                        "source": "extracted",
-                        "is_primary": True,
-                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "source": "frame_extract",
+                        "is_cover": True,
+                        "uploaded_at": datetime.now(timezone.utc).isoformat(),
                     }
 
                     item_doc.reference.update({
                         "images": firestore.ArrayUnion([image_obj]),
-                        "frame_gcs_path": full_gcs_path, # Keep for backward compatibility
                     })
 
                     logger.info(
