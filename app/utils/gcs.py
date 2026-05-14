@@ -53,6 +53,30 @@ class GCSUtils:
             kwargs["service_account_email"] = self.target_sa
         return blob.generate_signed_url(**kwargs)
 
+    def generate_image_upload_url(self, bucket_name: str, blob_name: str, content_type: str = "image/jpeg") -> str:
+        """Returns a v4 signed PUT URL for image uploads, valid for 15 minutes."""
+        bucket = self.storage_client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+        kwargs: dict = dict(
+            version="v4",
+            expiration=datetime.timedelta(minutes=15),
+            method="PUT",
+            content_type=content_type,
+        )
+        if self._use_impersonation:
+            kwargs["service_account_email"] = self.target_sa
+        return blob.generate_signed_url(**kwargs)
+
+    def delete_blob(self, bucket_name: str, blob_name: str) -> None:
+        """Deletes a GCS object. No-ops silently if the blob does not exist."""
+        from google.api_core.exceptions import NotFound
+        bucket = self.storage_client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+        try:
+            blob.delete()
+        except NotFound:
+            pass
+
     def generate_download_url(self, bucket_name: str, blob_name: str, expires_in: int = 3600) -> str:
         """Returns a v4 signed GET URL for viewing a private GCS object."""
         bucket = self.storage_client.bucket(bucket_name)
