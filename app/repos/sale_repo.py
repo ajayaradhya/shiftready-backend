@@ -48,7 +48,25 @@ class SaleRepo:
             .order_by("createdAt", direction="DESCENDING")
             .stream()
         )
-        return [{**d.to_dict(), "id": d.id} async for d in docs]
+        results = []
+        async for d in docs:
+            data = {**d.to_dict(), "id": d.id}
+            item_count = 0
+            total_value = 0.0
+            async for b in self._ref(d.id).collection("bundles").stream():
+                async for item in b.reference.collection("items").stream():
+                    item_data = item.to_dict()
+                    item_count += 1
+                    price = (
+                        item_data.get("actual_listing_price")
+                        or item_data.get("predicted_listing_price")
+                        or 0
+                    )
+                    total_value += price
+            data["itemCount"] = item_count
+            data["totalValue"] = total_value
+            results.append(data)
+        return results
 
     async def get_full_event_summary(self, event_id: str) -> dict | None:
         event_ref = self._ref(event_id)
