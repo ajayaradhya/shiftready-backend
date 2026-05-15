@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+import uuid
 from datetime import datetime, timezone
 
 from app.domain.status import SaleStatus
@@ -151,11 +152,22 @@ async def run_frames_extraction_pipeline(
         if not bundles:
             raise ValueError("Frames extraction returned no items")
 
+        now = datetime.now(timezone.utc).isoformat()
+        item_idx = 0
         for b in bundles:
             bundle_id = await firestore.add_bundle(event_id, b.bundle_name, 0)
             for item in b.items:
                 item_data = item.model_dump() if hasattr(item, "model_dump") else item.dict()
+                frame_uri = gcs_uris[min(item_idx, len(gcs_uris) - 1)]
+                item_data["images"] = [{
+                    "id": str(uuid.uuid4()),
+                    "gcs_path": frame_uri,
+                    "source": "frame_extract",
+                    "is_cover": True,
+                    "uploaded_at": now,
+                }]
                 await firestore.add_item_to_bundle(event_id, bundle_id, item_data)
+                item_idx += 1
 
         await firestore.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
         await firestore.update_sale_metadata(event_id, {

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.core.deps import FirestoreDep
+from app.core.deps import FirestoreDep, GCSDep
 from app.services.auth import get_optional_user, User
 
 router = APIRouter(prefix="/marketplace", tags=["Marketplace"])
@@ -15,6 +15,7 @@ async def list_live_sales(firestore: FirestoreDep):
 @router.get("/search")
 async def search_marketplace(
     firestore: FirestoreDep,
+    gcs: GCSDep,
     q: str | None = Query(None, description="Search by item name or brand"),
     suburb: str | None = Query(None, description="Filter by Sydney suburb (e.g. Waterloo)"),
     user: User | None = Depends(get_optional_user),
@@ -30,6 +31,18 @@ async def search_marketplace(
     for item in items:
         is_owner = user and item.get("sellerId") == user.id
 
+        image_url = None
+        images = item.get("images") or []
+        cover = next((img for img in images if img.get("is_cover")), images[0] if images else None)
+        if cover:
+            gcs_path = cover.get("gcs_path")
+            if gcs_path and gcs_path.startswith("gs://"):
+                try:
+                    s = gcs_path.replace("gs://", "").split("/", 1)
+                    image_url = gcs.generate_download_url(s[0], s[1])
+                except Exception:
+                    pass
+
         processed_items.append({
             "id": item["id"],
             "name": item.get("name", "Unknown Item"),
@@ -38,6 +51,7 @@ async def search_marketplace(
             "price": item.get("actual_listing_price"),
             "bundleName": item.get("bundleName"),
             "eventId": item.get("eventId"),
+            "image_url": image_url,
             # Restricted details
             "metadata": {
                 "year": item.get("actual_year_of_purchase") if user else None,
@@ -57,12 +71,26 @@ async def search_marketplace(
 async def get_public_sale(
     event_id: str,
     firestore: FirestoreDep,
+    gcs: GCSDep,
     user: User | None = Depends(get_optional_user),
 ):
     """Public sale detail page — bundles + items for a single LIVE sale."""
     sale = await firestore.marketplace.get_public_sale(event_id)
     if not sale:
         raise HTTPException(status_code=404, detail="Sale not found")
+
+    for bundle in sale.get("bundles", []):
+        for item in bundle.get("items", []):
+            gcs_path = item.pop("image_gcs_path", None)
+            if gcs_path and gcs_path.startswith("gs://"):
+                try:
+                    s = gcs_path.replace("gs://", "").split("/", 1)
+                    item["image_url"] = gcs.generate_download_url(s[0], s[1])
+                except Exception:
+                    item["image_url"] = None
+            else:
+                item["image_url"] = None
+
     return {**sale, "is_authenticated": user is not None}
 
 

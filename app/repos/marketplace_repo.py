@@ -144,16 +144,19 @@ class MarketplaceRepo:
         bundles = []
         for bundle_doc, items in zip(bundle_docs, item_snapshots):
             b_data = bundle_doc.to_dict()
-            bundle_items = [
-                {
+            bundle_items = []
+            for item in items:
+                d = item.to_dict()
+                images = d.get("images") or []
+                cover = next((img for img in images if img.get("is_cover")), images[0] if images else None)
+                bundle_items.append({
                     "id": item.id,
-                    "name": item.to_dict().get("name"),
-                    "brand": item.to_dict().get("brand"),
-                    "condition": item.to_dict().get("condition"),
-                    "price": item.to_dict().get("actual_listing_price") or 0,
-                }
-                for item in items
-            ]
+                    "name": d.get("name"),
+                    "brand": d.get("brand"),
+                    "condition": d.get("condition"),
+                    "price": d.get("actual_listing_price") or 0,
+                    "image_gcs_path": cover.get("gcs_path") if cover else None,
+                })
             item_total = sum(i["price"] for i in bundle_items)
             bundle_price = round(item_total * (1 - BUNDLE_DISCOUNT), 2)
             bundles.append({
