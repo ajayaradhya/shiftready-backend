@@ -8,6 +8,7 @@ from app.domain.status import SaleStatus
 from app.services.firestore import FirestoreService
 from app.services.gemini import GeminiProcessor
 from app.services.jobs import trigger_frame_extraction
+from app.models.schemas import CapturedItemInput
 from app.services.notifier import notifier
 
 logger = logging.getLogger(__name__)
@@ -183,6 +184,136 @@ async def run_frames_extraction_pipeline(
 
     except Exception as exc:
         logger.exception(f"Frames pipeline failed for event {event_id}")
+        await firestore.transition_sale_status(event_id, SaleStatus.FAILED)
+        await notifier.notify_event(event_id, {"status": SaleStatus.FAILED, "error": str(exc)})
+
+
+async def run_capture_refinement_pipeline(
+    event_id: str,
+    items: list[CapturedItemInput],
+    firestore: FirestoreService,
+    gemini: GeminiProcessor,
+):
+    """
+    Phase 2 live-capture finalize pipeline.
+    Items are pre-analyzed (name/brand/price/gcs_uri already extracted per-frame by Gemini).
+    This pipeline groups them into room bundles via a single refinement call, writes to
+    Firestore, then hands off to pricing.
+    """
+    start = time.perf_counter()
+    logger.info(f"Starting capture refinement pipeline for event: {event_id} ({len(items)} items)")
+
+    try:
+        await firestore.transition_sale_status(event_id, SaleStatus.PROCESSING)
+
+        # Build lightweight context for the refinement prompt (no images needed)
+        items_context = [
+            {"idx": i, "name": item.name, "brand": item.brand or "Unknown", "price": item.predicted_original_price}
+            for i, item in enumerate(items)
+        ]
+
+        bundles_groupings, ai_metadata = await gemini.refine_captured_items(items_context)
+
+        if not bundles_groupings:
+            # Fallback: put everything in one bundle
+            bundles_groupings = [{"bundle_name": "Captured Items", "item_indices": list(range(len(items)))}]
+
+        now = datetime.now(timezone.utc).isoformat()
+        seen_indices: set[int] = set()
+
+        for grouping in bundles_groupings:
+            bundle_name = grouping.get("bundle_name", "General")
+            item_indices = grouping.get("item_indices", [])
+            if not item_indices:
+                continue
+
+            bundle_id = await firestore.add_bundle(event_id, bundle_name, 0)
+
+            for idx in item_indices:
+                if idx < 0 or idx >= len(items) or idx in seen_indices:
+                    continue
+                seen_indices.add(idx)
+                item = items[idx]
+                item_data = {
+                    "name": item.name,
+                    "brand": item.brand or "Unknown",
+                    "condition": "Good",
+                    "predicted_original_price": item.predicted_original_price or 0,
+                    "actual_original_price": 0,
+                    "predicted_listing_price": 0,
+                    "actual_listing_price": 0,
+                    "predicted_year_of_purchase": None,
+                    "actual_year_of_purchase": None,
+                    "timestamp_label": "",
+                    "video_timestamp": 0.0,
+                    "dimensions": None,
+                    "material": None,
+                    "is_fragile": False,
+                    "disassembly_required": False,
+                    "confidence": 1.0,
+                    "pricing_reasoning": None,
+                    "images": [{
+                        "id": str(uuid.uuid4()),
+                        "gcs_path": item.gcs_uri,
+                        "source": "frame_extract",
+                        "is_cover": True,
+                        "uploaded_at": now,
+                    }],
+                }
+                await firestore.add_item_to_bundle(event_id, bundle_id, item_data)
+
+        # Any items Gemini missed → dump into a catch-all bundle
+        missed = [i for i in range(len(items)) if i not in seen_indices]
+        if missed:
+            bundle_id = await firestore.add_bundle(event_id, "General", 0)
+            for idx in missed:
+                item = items[idx]
+                item_data = {
+                    "name": item.name,
+                    "brand": item.brand or "Unknown",
+                    "condition": "Good",
+                    "predicted_original_price": item.predicted_original_price or 0,
+                    "actual_original_price": 0,
+                    "predicted_listing_price": 0,
+                    "actual_listing_price": 0,
+                    "predicted_year_of_purchase": None,
+                    "actual_year_of_purchase": None,
+                    "timestamp_label": "",
+                    "video_timestamp": 0.0,
+                    "dimensions": None,
+                    "material": None,
+                    "is_fragile": False,
+                    "disassembly_required": False,
+                    "confidence": 1.0,
+                    "pricing_reasoning": None,
+                    "images": [{
+                        "id": str(uuid.uuid4()),
+                        "gcs_path": item.gcs_uri,
+                        "source": "frame_extract",
+                        "is_cover": True,
+                        "uploaded_at": now,
+                    }],
+                }
+                await firestore.add_item_to_bundle(event_id, bundle_id, item_data)
+
+        await firestore.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
+        await firestore.update_sale_metadata(event_id, {
+            "refinementMetadata": ai_metadata,
+            "captureMode": "live",
+        })
+        await notifier.notify_event(event_id, {
+            "status": SaleStatus.READY_FOR_REVIEW,
+            "message": f"Capture refinement complete. {len(items)} items organised into bundles.",
+        })
+
+        logger.info(f"Capture refinement pipeline success | event={event_id} | {time.perf_counter() - start:.2f}s")
+
+        # Kick off pricing immediately
+        await firestore.transition_sale_status(event_id, SaleStatus.PRICING_IN_PROGRESS)
+        await run_pricing_pipeline(event_id, firestore, gemini)
+
+    except Exception as exc:
+        logger.exception(f"Capture refinement pipeline failed for event {event_id}")
         await firestore.transition_sale_status(event_id, SaleStatus.FAILED)
         await notifier.notify_event(event_id, {"status": SaleStatus.FAILED, "error": str(exc)})
 

@@ -30,6 +30,11 @@ class GeminiProcessor:
     async def identify_single_frame(self, gcs_uri: str) -> dict[str, Any]:
         return await self._extraction.identify_single_frame(gcs_uri)
 
+    async def refine_captured_items(
+        self, items: list[dict[str, Any]]
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        return await self._extraction.refine_captured_items(items)
+
     async def estimate_listing_prices(
         self, items: list[dict[str, Any]], move_out_date: str
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:

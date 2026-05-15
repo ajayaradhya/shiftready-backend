@@ -18,3 +18,14 @@ class PricingResult(BaseModel):
 class PricingList(BaseModel):
     """Wrapper list returned by the pricing prompt."""
     results: list[PricingResult]
+
+
+class RefinementGrouping(BaseModel):
+    """A room bundle assignment returned by the refinement prompt."""
+    bundle_name: str = Field(description="Room name (e.g. 'Living Room', 'Bedroom', 'Kitchen')")
+    item_indices: list[int] = Field(description="0-based indices into the input items array assigned to this bundle")
+
+
+class RefinementResult(BaseModel):
+    """Structured output from the capture refinement prompt."""
+    bundles: list[RefinementGrouping]

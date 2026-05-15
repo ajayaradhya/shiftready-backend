@@ -46,6 +46,24 @@ class CaptureFinalizeRequest(BaseModel):
     gcs_uris: list[str]
 
 
+class CapturedItemInput(BaseModel):
+    temp_id: str
+    name: str
+    brand: str | None = None
+    predicted_original_price: float | None = None
+    gcs_uri: str
+
+
+class CaptureFinalizeV2Request(BaseModel):
+    items: list[CapturedItemInput]
+
+
+class CaptureFinalizeV2Response(BaseModel):
+    event_id: str
+    status: str
+    item_count: int
+
+
 class PriceEstimationRequest(BaseModel):
     move_out_date: str
 

@@ -10,7 +10,7 @@ from app.domain.status import SaleStatus
 from app.models.schemas import (
     AppendInitResponse, AppendProcessRequest,
     BundleCreateRequest, BundleCreateResponse,
-    CaptureInitResponse, CaptureFrameResponse, CaptureFinalizeRequest, ProcessFramesResponse,
+    CaptureInitResponse, CaptureFrameResponse, CaptureFinalizeRequest, CaptureFinalizeV2Request, CaptureFinalizeV2Response, ProcessFramesResponse,
     ImageConfirmRequest, ImageUploadUrlItem, ImageUploadUrlsRequest, ImageUploadUrlsResponse,
     ItemCreateRequest, ItemCreateResponse, ItemUpdate,
     PriceEstimationRequest,
@@ -21,6 +21,7 @@ from app.models.schemas import (
 from app.core.deps import FirestoreDep, GCSDep, BucketDep, GeminiDep
 from app.services.pipelines import (
     run_append_extraction_pipeline,
+    run_capture_refinement_pipeline,
     run_extraction_pipeline,
     run_frames_extraction_pipeline,
     run_pricing_pipeline,
@@ -151,6 +152,26 @@ async def finalize_capture(
         raise HTTPException(status_code=400, detail="At least one frame URI required")
     background_tasks.add_task(run_frames_extraction_pipeline, event_id, payload.gcs_uris, firestore, gemini)
     return {"status": "processing_started"}
+
+
+@router.post("/{event_id}/capture/finalize-v2", response_model=CaptureFinalizeV2Response)
+async def finalize_capture_v2(
+    event_id: str,
+    payload: CaptureFinalizeV2Request,
+    background_tasks: BackgroundTasks,
+    firestore: FirestoreDep,
+    gemini: GeminiDep,
+    event: dict = Depends(validate_sale_owner),
+):
+    """
+    Phase 2 live-capture finalize: accepts pre-analyzed items (name/brand/price/gcs_uri already
+    extracted per-frame), skips re-extraction, runs refinement + pricing in background.
+    Path: POST /api/v1/sales/{event_id}/capture/finalize-v2
+    """
+    if not payload.items:
+        raise HTTPException(status_code=400, detail="At least one item is required")
+    background_tasks.add_task(run_capture_refinement_pipeline, event_id, payload.items, firestore, gemini)
+    return CaptureFinalizeV2Response(event_id=event_id, status="processing_started", item_count=len(payload.items))
 
 
 @router.post("/{event_id}/process", response_model=StatusResponse)

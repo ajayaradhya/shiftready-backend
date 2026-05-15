@@ -6,10 +6,22 @@ from google import genai
 from google.genai import types
 
 from app.ai.schema_utils import get_clean_schema
-from app.ai.schemas import SingleFrameResult
+from app.ai.schemas import SingleFrameResult, RefinementResult
 from app.models.inventory import RoomBundle
 
 logger = logging.getLogger(__name__)
+
+_REFINEMENT_PROMPT = """You are organizing household items into room bundles for a home relocation sale.
+
+You receive a JSON array of items, each with an index (idx), name, brand, and estimated price.
+Your job:
+1. GROUPING: Assign each item to exactly one room bundle. Use clear room names: Living Room, Bedroom, Kitchen, Bathroom, Home Office, Outdoor, or General.
+   Infer room from item type: sofa/tv/rug/couch → Living Room, bed/wardrobe/dresser → Bedroom, fridge/oven/microwave → Kitchen, desk/monitor/computer → Home Office.
+2. DEDUPLICATION: If two items are clearly the same object captured twice (same category, very similar name), include only the lower index. Exclude the duplicate entirely.
+3. COVERAGE: Every item index must appear in exactly one bundle, unless it is a confirmed duplicate.
+
+Return the bundle groupings only. Do not modify item names or prices.
+"""
 
 _SINGLE_FRAME_PROMPT = """You are analyzing a photo of a single household item for a home relocation sale.
 
@@ -182,6 +194,54 @@ class ExtractionService:
             return bundles, metadata
         except Exception as exc:
             logger.error(f"Failed to parse frames response: {exc}")
+            raise
+
+    async def refine_captured_items(
+        self, items: list[dict[str, Any]]
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        metadata: dict[str, Any] = {
+            "model": self._model_id,
+            "engine": "google-genai-sdk",
+            "status": "processing",
+            "item_count": len(items),
+        }
+
+        refinement_schema = get_clean_schema(RefinementResult)
+        prompt = f"{_REFINEMENT_PROMPT}\n\nItems:\n{json.dumps(items, ensure_ascii=False)}"
+
+        response = await self._client.aio.models.generate_content(
+            model=self._model_id,
+            contents=[prompt],
+            config=types.GenerateContentConfig(
+                temperature=0.1,
+                system_instruction=self._system_instruction,
+                response_mime_type="application/json",
+                response_schema=types.Schema(**refinement_schema),
+            ),
+        )
+
+        metadata["usage"] = (
+            response.usage_metadata.model_dump()
+            if hasattr(response, "usage_metadata")
+            else {}
+        )
+        metadata["finish_reason"] = (
+            response.candidates[0].finish_reason if response.candidates else "UNKNOWN"
+        )
+        metadata["status"] = "success"
+
+        try:
+            parsed = response.parsed if response.parsed is not None else json.loads(response.text)
+            if hasattr(parsed, "bundles"):
+                bundles = [b.model_dump() for b in parsed.bundles]
+            elif isinstance(parsed, dict):
+                bundles = parsed.get("bundles", [])
+            else:
+                bundles = []
+            logger.info(f"Refinement complete | {len(bundles)} bundles | items={len(items)}")
+            return bundles, metadata
+        except Exception as exc:
+            logger.error(f"Failed to parse refinement response: {exc}")
             raise
 
     async def identify_single_frame(self, gcs_uri: str) -> dict[str, Any]:
