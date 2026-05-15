@@ -17,6 +17,15 @@ class SaleInitResponse(BaseModel):
     gcs_uri: str
 
 
+class CaptureInitResponse(BaseModel):
+    event_id: str
+
+
+class ProcessFramesResponse(BaseModel):
+    event_id: str
+    status: str
+
+
 class PriceEstimationRequest(BaseModel):
     move_out_date: str
 

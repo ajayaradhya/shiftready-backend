@@ -73,6 +73,50 @@ async def run_extraction_pipeline(
         await notifier.notify_event(event_id, {"status": SaleStatus.FAILED, "error": str(exc)})
 
 
+async def run_frames_extraction_pipeline(
+    event_id: str,
+    gcs_uris: list[str],
+    firestore: FirestoreService,
+    gemini: GeminiProcessor,
+):
+    """
+    Frames variant of Stage 1: analyzes user-confirmed JPEG frames instead of a video.
+    """
+    start = time.perf_counter()
+    logger.info(f"Starting frames extraction pipeline for event: {event_id} ({len(gcs_uris)} frames)")
+
+    try:
+        await firestore.transition_sale_status(event_id, SaleStatus.PROCESSING)
+
+        bundles, ai_metadata = await gemini.process_frames(gcs_uris)
+
+        if not bundles:
+            raise ValueError("Frames extraction returned no items")
+
+        for b in bundles:
+            bundle_id = await firestore.add_bundle(event_id, b.bundle_name, 0)
+            for item in b.items:
+                item_data = item.model_dump() if hasattr(item, "model_dump") else item.dict()
+                await firestore.add_item_to_bundle(event_id, bundle_id, item_data)
+
+        await firestore.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
+        await firestore.update_sale_metadata(event_id, {
+            "extractionMetadata": ai_metadata,
+            "captureMode": "frames",
+        })
+        await notifier.notify_event(event_id, {
+            "status": SaleStatus.READY_FOR_REVIEW,
+            "message": f"Frames extraction complete. Found {len(bundles)} bundle(s).",
+        })
+
+        logger.info(f"Frames pipeline success | event={event_id} | {time.perf_counter() - start:.2f}s")
+
+    except Exception as exc:
+        logger.exception(f"Frames pipeline failed for event {event_id}")
+        await firestore.transition_sale_status(event_id, SaleStatus.FAILED)
+        await notifier.notify_event(event_id, {"status": SaleStatus.FAILED, "error": str(exc)})
+
+
 async def run_pricing_pipeline(
     event_id: str,
     firestore: FirestoreService,

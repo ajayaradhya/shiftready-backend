@@ -3,12 +3,13 @@ import mimetypes
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, WebSocket, WebSocketDisconnect, UploadFile, File
 from google.cloud.firestore import ArrayUnion
 
 from app.domain.status import SaleStatus
 from app.models.schemas import (
     BundleCreateRequest, BundleCreateResponse,
+    CaptureInitResponse, ProcessFramesResponse,
     ImageConfirmRequest, ImageUploadUrlItem, ImageUploadUrlsRequest, ImageUploadUrlsResponse,
     ItemCreateRequest, ItemCreateResponse, ItemUpdate,
     PriceEstimationRequest,
@@ -17,7 +18,7 @@ from app.models.schemas import (
 )
 
 from app.core.deps import FirestoreDep, GCSDep, BucketDep, GeminiDep
-from app.services.pipelines import run_extraction_pipeline, run_pricing_pipeline
+from app.services.pipelines import run_extraction_pipeline, run_frames_extraction_pipeline, run_pricing_pipeline
 from app.services.notifier import notifier
 from app.services.auth import get_current_user, validate_sale_owner, User, security
 
@@ -52,6 +53,51 @@ async def init_sale(
         "upload_url": upload_url,
         "gcs_uri": gcs_uri,
     }
+
+@router.post("/init-capture", response_model=CaptureInitResponse)
+async def init_capture_sale(
+    firestore: FirestoreDep,
+    current_user: User = Depends(get_current_user),
+    _ = Depends(security),
+):
+    """
+    Create a sale event for the live-capture (frames) flow. No video upload needed.
+    Path: POST /api/v1/sales/init-capture
+    """
+    event_id = await firestore.create_sale_event(current_user.id, "")
+    return {"event_id": event_id}
+
+
+@router.post("/{event_id}/process-frames", response_model=ProcessFramesResponse)
+async def process_frames(
+    event_id: str,
+    background_tasks: BackgroundTasks,
+    firestore: FirestoreDep,
+    gcs: GCSDep,
+    bucket: BucketDep,
+    gemini: GeminiDep,
+    frames: list[UploadFile] = File(...),
+    event: dict = Depends(validate_sale_owner),
+):
+    """
+    Accept confirmed capture frames (JPEG), upload to GCS, and run frames extraction.
+    Path: POST /api/v1/sales/{event_id}/process-frames
+    """
+    if not frames:
+        raise HTTPException(status_code=400, detail="At least one frame is required")
+    if len(frames) > 30:
+        raise HTTPException(status_code=400, detail="Maximum 30 frames per session")
+
+    gcs_uris: list[str] = []
+    for i, frame in enumerate(frames):
+        data = await frame.read()
+        blob_name = f"captures/{event_id}/frame_{i:03d}.jpg"
+        uri = gcs.upload_bytes(bucket, blob_name, data, content_type="image/jpeg")
+        gcs_uris.append(uri)
+
+    background_tasks.add_task(run_frames_extraction_pipeline, event_id, gcs_uris, firestore, gemini)
+    return {"event_id": event_id, "status": "processing_started"}
+
 
 @router.post("/{event_id}/process", response_model=StatusResponse)
 async def start_processing(

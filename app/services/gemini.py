@@ -22,6 +22,11 @@ class GeminiProcessor:
     ) -> tuple[list[RoomBundle], dict[str, Any]]:
         return await self._extraction.process_walkthrough(gcs_uri)
 
+    async def process_frames(
+        self, gcs_uris: list[str]
+    ) -> tuple[list[RoomBundle], dict[str, Any]]:
+        return await self._extraction.process_frames(gcs_uris)
+
     async def estimate_listing_prices(
         self, items: list[dict[str, Any]], move_out_date: str
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:

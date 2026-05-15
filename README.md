@@ -228,6 +228,43 @@ Terminal states: `PARTIALLY_SOLD`, `EXPIRED`, `FAILED`, `ARCHIVED`.
 
 ---
 
+## Future TODOs
+
+1. Guided live capture, not dump-and-pray
+Problem: mover shoots 8-min shaky walkthrough. Misses items in cupboards, brand labels never in frame, blur kills frames. Re-shoot = abandon.
+
+Fix: in-app camera w/ realtime co-pilot (Gemini Live API or on-device MediaPipe + streaming chunks to backend).
+
+Detects room change → "Kitchen detected, pan slowly left."
+Spots furniture w/o visible label → "Tap sofa to mark, then closeup of tag underneath."
+Progress bar: rooms covered, items found, missing-data flags.
+Uploads chunks during capture → extraction starts before user hits stop. Perceived latency drops from minutes to seconds.
+Implementation: stream video/webm chunks to GCS, fire extraction per-chunk, merge bundles. Reuse existing pipeline, swap single-shot for incremental.
+
+2. Two-pass extraction w/ targeted re-prompt
+Problem: one Gemini call guesses brand/year/price from blurry mid-pan frame. Hallucinates "Samsung" on every TV. predicted_original_price often wildly off.
+
+Fix: confidence-aware loop.
+
+Pass 1 (current): wide identify → bundles + items + per-field confidence (add to schema).
+Pass 2: backend extracts high-res frame crops at video_timestamp for each low-confidence item, re-queries Gemini w/ crop + grounded web search ("find this exact model") → fills brand/model/year w/ citations stored in pricing_reasoning-style field.
+Pass 3 (user-facing): items still unresolved become a short "1-tap task list" — "Snap photo of TV back panel for model number". Mover does 4 closeups instead of editing 40 forms.
+LLM win: smaller targeted prompts > one mega-prompt. Cheaper, more accurate, auditable.
+
+3. Conversational item refinement, kill the form
+Problem: review cockpit = 40 cards × 8 fields each. Tedious. Movers bail.
+
+Fix: chat-per-item w/ multimodal context.
+
+Card opens chat: "IKEA Malm, bought 2019, small scratch on top" → LLM patches structured fields + recomputes price + updates condition.
+Voice input ("ok Google" style) — mover talks while packing.
+Cross-item ops: "Everything in kitchen is 5 years old" → bulk update.
+"Did you miss anything?" — mover types "there's a dyson vacuum in hall closet" → item created w/o video reshoot.
+Frame scrubber w/ tap-to-add: "that thing top-left at 2:34" → Gemini re-extracts that crop only.
+Backend: new PATCH /items/{id}/refine taking message + optional image, returns diff + new pricing. Reuses pricing service.
+
+---
+
 ## Testing
 
 ```bash

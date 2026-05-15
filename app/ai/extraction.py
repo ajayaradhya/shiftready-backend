@@ -10,6 +10,26 @@ from app.models.inventory import RoomBundle
 
 logger = logging.getLogger(__name__)
 
+_FRAMES_PROMPT = """
+You are analyzing photos of household items for a home relocation sale.
+Each image shows one item the seller confirmed they want to list.
+
+For each image, identify the item and create a listing entry.
+Group items into appropriate Room Bundles (e.g., 'Living Room', 'Kitchen').
+
+PRICING:
+- Predict 'predicted_original_price' in AUD.
+- Predict 'predicted_year_of_purchase' based on design and port types.
+
+PHYSICAL ATTRIBUTES:
+- Estimate 'dimensions' (L x W x H in cm).
+- Identify 'material' (e.g., 'Oak', 'Velvet', 'Stainless Steel').
+- Flag 'is_fragile' and 'disassembly_required'.
+
+Set 'timestamp_label' to "" (no video involved).
+Do not generate 'id' fields.
+"""
+
 _PROMPT = """
 Analyze this video and identify sellable items.
 Organize items into Room Bundles (e.g., 'Living Room', 'Kitchen').
@@ -95,4 +115,60 @@ class ExtractionService:
             return bundles, metadata
         except Exception as exc:
             logger.error(f"Failed to parse walkthrough response: {exc}")
+            raise
+
+    async def process_frames(
+        self, gcs_uris: list[str]
+    ) -> tuple[list[RoomBundle], dict[str, Any]]:
+        metadata: dict[str, Any] = {
+            "model": self._model_id,
+            "engine": "google-genai-sdk",
+            "status": "processing",
+            "frame_count": len(gcs_uris),
+        }
+
+        bundle_schema = get_clean_schema(RoomBundle)
+
+        parts: list[Any] = [
+            types.Part.from_uri(file_uri=uri, mime_type="image/jpeg")
+            for uri in gcs_uris
+        ]
+        parts.append(_FRAMES_PROMPT)
+
+        response = await self._client.aio.models.generate_content(
+            model=self._model_id,
+            contents=parts,
+            config=types.GenerateContentConfig(
+                temperature=0.1,
+                system_instruction=self._system_instruction,
+                response_mime_type="application/json",
+                response_schema=types.Schema(type="ARRAY", items=bundle_schema),
+            ),
+        )
+
+        metadata["usage"] = (
+            response.usage_metadata.model_dump()
+            if hasattr(response, "usage_metadata")
+            else {}
+        )
+        metadata["finish_reason"] = (
+            response.candidates[0].finish_reason if response.candidates else "UNKNOWN"
+        )
+        metadata["status"] = "success"
+
+        try:
+            raw_data = (
+                response.parsed
+                if response.parsed is not None
+                else json.loads(response.text)
+            )
+            bundles = []
+            for b_data in raw_data:
+                for item in b_data.get("items", []):
+                    item["video_timestamp"] = 0.0
+                    item.setdefault("timestamp_label", "")
+                bundles.append(RoomBundle(**b_data))
+            return bundles, metadata
+        except Exception as exc:
+            logger.error(f"Failed to parse frames response: {exc}")
             raise
