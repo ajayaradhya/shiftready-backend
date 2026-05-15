@@ -6,9 +6,20 @@ from google import genai
 from google.genai import types
 
 from app.ai.schema_utils import get_clean_schema
+from app.ai.schemas import SingleFrameResult
 from app.models.inventory import RoomBundle
 
 logger = logging.getLogger(__name__)
+
+_SINGLE_FRAME_PROMPT = """You are analyzing a photo of a single household item for a home relocation sale.
+
+Identify the main item and extract exactly three fields:
+- name: descriptive common name (e.g. "Armchair", "Samsung 65\" TV", "Coffee Table")
+- brand: visible brand or manufacturer; return "Unknown" if not determinable from the image
+- predicted_original_price: estimated original retail price in AUD when purchased new
+
+Focus only on the primary item in the frame. Be concise and realistic with pricing.
+"""
 
 _FRAMES_PROMPT = """
 You are analyzing photos of household items for a home relocation sale.
@@ -172,3 +183,33 @@ class ExtractionService:
         except Exception as exc:
             logger.error(f"Failed to parse frames response: {exc}")
             raise
+
+    async def identify_single_frame(self, gcs_uri: str) -> dict[str, Any]:
+        schema = get_clean_schema(SingleFrameResult)
+
+        response = await self._client.aio.models.generate_content(
+            model=self._model_id,
+            contents=[
+                types.Part.from_uri(file_uri=gcs_uri, mime_type="image/jpeg"),
+                _SINGLE_FRAME_PROMPT,
+            ],
+            config=types.GenerateContentConfig(
+                temperature=0.1,
+                system_instruction=self._system_instruction,
+                response_mime_type="application/json",
+                response_schema=types.Schema(**schema),
+            ),
+        )
+
+        usage = response.usage_metadata.total_token_count if hasattr(response, "usage_metadata") else "n/a"
+        parsed = response.parsed if response.parsed is not None else json.loads(response.text)
+
+        if hasattr(parsed, "model_dump"):
+            result = parsed.model_dump()
+        elif isinstance(parsed, dict):
+            result = parsed
+        else:
+            result = {"name": str(parsed), "brand": "Unknown", "predicted_original_price": 0.0}
+
+        logger.info(f"Single frame identified | name={result.get('name')} | brand={result.get('brand')} | tokens={usage}")
+        return result

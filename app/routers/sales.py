@@ -10,7 +10,7 @@ from app.domain.status import SaleStatus
 from app.models.schemas import (
     AppendInitResponse, AppendProcessRequest,
     BundleCreateRequest, BundleCreateResponse,
-    CaptureInitResponse, ProcessFramesResponse,
+    CaptureInitResponse, CaptureFrameResponse, CaptureFinalizeRequest, ProcessFramesResponse,
     ImageConfirmRequest, ImageUploadUrlItem, ImageUploadUrlsRequest, ImageUploadUrlsResponse,
     ItemCreateRequest, ItemCreateResponse, ItemUpdate,
     PriceEstimationRequest,
@@ -103,6 +103,54 @@ async def process_frames(
 
     background_tasks.add_task(run_frames_extraction_pipeline, event_id, gcs_uris, firestore, gemini)
     return {"event_id": event_id, "status": "processing_started"}
+
+
+@router.post("/{event_id}/capture/frame", response_model=CaptureFrameResponse)
+async def capture_frame(
+    event_id: str,
+    gcs: GCSDep,
+    bucket: BucketDep,
+    gemini: GeminiDep,
+    frame: UploadFile = File(...),
+    event: dict = Depends(validate_sale_owner),
+):
+    """
+    Upload a single confirmed capture frame, run quick Gemini identification (name + brand + price),
+    and return the result for the live bucket. Does NOT write to Firestore — display only.
+    Path: POST /api/v1/sales/{event_id}/capture/frame
+    """
+    data = await frame.read()
+    frame_id = str(uuid.uuid4())
+    blob_name = f"captures/{event_id}/{frame_id}.jpg"
+    gcs_uri = gcs.upload_bytes(bucket, blob_name, data, content_type="image/jpeg")
+
+    result = await gemini.identify_single_frame(gcs_uri)
+    return CaptureFrameResponse(
+        name=result.get("name", "Unknown Item"),
+        brand=result.get("brand", "Unknown"),
+        predicted_original_price=float(result.get("predicted_original_price", 0.0)),
+        gcs_uri=gcs_uri,
+    )
+
+
+@router.post("/{event_id}/capture/finalize", response_model=StatusResponse)
+async def finalize_capture(
+    event_id: str,
+    payload: CaptureFinalizeRequest,
+    background_tasks: BackgroundTasks,
+    firestore: FirestoreDep,
+    gemini: GeminiDep,
+    event: dict = Depends(validate_sale_owner),
+):
+    """
+    Trigger full extraction on all GCS frame URIs accumulated during live capture.
+    Runs run_frames_extraction_pipeline in background (same as process-frames but GCS URIs not re-uploaded).
+    Path: POST /api/v1/sales/{event_id}/capture/finalize
+    """
+    if not payload.gcs_uris:
+        raise HTTPException(status_code=400, detail="At least one frame URI required")
+    background_tasks.add_task(run_frames_extraction_pipeline, event_id, payload.gcs_uris, firestore, gemini)
+    return {"status": "processing_started"}
 
 
 @router.post("/{event_id}/process", response_model=StatusResponse)

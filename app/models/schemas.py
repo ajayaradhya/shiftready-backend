@@ -35,6 +35,17 @@ class ProcessFramesResponse(BaseModel):
     status: str
 
 
+class CaptureFrameResponse(BaseModel):
+    name: str
+    brand: str
+    predicted_original_price: float
+    gcs_uri: str
+
+
+class CaptureFinalizeRequest(BaseModel):
+    gcs_uris: list[str]
+
+
 class PriceEstimationRequest(BaseModel):
     move_out_date: str
 
