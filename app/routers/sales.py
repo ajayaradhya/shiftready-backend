@@ -8,6 +8,7 @@ from google.cloud.firestore import ArrayUnion
 
 from app.domain.status import SaleStatus
 from app.models.schemas import (
+    AppendInitResponse, AppendProcessRequest,
     BundleCreateRequest, BundleCreateResponse,
     CaptureInitResponse, ProcessFramesResponse,
     ImageConfirmRequest, ImageUploadUrlItem, ImageUploadUrlsRequest, ImageUploadUrlsResponse,
@@ -18,7 +19,12 @@ from app.models.schemas import (
 )
 
 from app.core.deps import FirestoreDep, GCSDep, BucketDep, GeminiDep
-from app.services.pipelines import run_extraction_pipeline, run_frames_extraction_pipeline, run_pricing_pipeline
+from app.services.pipelines import (
+    run_append_extraction_pipeline,
+    run_extraction_pipeline,
+    run_frames_extraction_pipeline,
+    run_pricing_pipeline,
+)
 from app.services.notifier import notifier
 from app.services.auth import get_current_user, validate_sale_owner, User, security
 
@@ -247,6 +253,45 @@ async def unpublish_sale(
 
     await firestore.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
     return {"status": SaleStatus.READY_FOR_REVIEW}
+
+# --- APPEND VIDEO ---
+
+@router.post("/{event_id}/append-init", response_model=AppendInitResponse)
+async def append_init(
+    event_id: str,
+    payload: SaleInitRequest,
+    gcs: GCSDep,
+    bucket: BucketDep,
+    current_user: User = Depends(get_current_user),
+    event: dict = Depends(validate_sale_owner),
+):
+    """
+    Step A: Generate a signed upload URL for an additional video to append to an existing sale.
+    Path: POST /api/v1/sales/{event_id}/append-init
+    """
+    gcs_uri = f"gs://{bucket}/{current_user.id}/append/{event_id}/{payload.filename}"
+    upload_url = gcs.generate_upload_url(bucket, f"{current_user.id}/append/{event_id}/{payload.filename}")
+    return {"upload_url": upload_url, "gcs_uri": gcs_uri}
+
+
+@router.post("/{event_id}/append-process", response_model=StatusResponse)
+async def append_process(
+    event_id: str,
+    payload: AppendProcessRequest,
+    background_tasks: BackgroundTasks,
+    firestore: FirestoreDep,
+    gemini: GeminiDep,
+    event: dict = Depends(validate_sale_owner),
+):
+    """
+    Step B: Trigger append extraction — adds new bundles/items without clearing existing ones.
+    Path: POST /api/v1/sales/{event_id}/append-process
+    """
+    background_tasks.add_task(
+        run_append_extraction_pipeline, event_id, payload.gcs_uri, firestore, gemini
+    )
+    return {"status": "processing_started"}
+
 
 # --- INVENTORY CRUD ---
 

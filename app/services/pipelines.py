@@ -73,6 +73,64 @@ async def run_extraction_pipeline(
         await notifier.notify_event(event_id, {"status": SaleStatus.FAILED, "error": str(exc)})
 
 
+async def run_append_extraction_pipeline(
+    event_id: str,
+    gcs_uri: str,
+    firestore: FirestoreService,
+    gemini: GeminiProcessor,
+    max_retries: int = 2,
+):
+    """
+    Append bundles/items from a new video to an existing sale event without clearing existing data.
+    """
+    start = time.perf_counter()
+    logger.info(f"Starting append extraction pipeline for event: {event_id}")
+
+    try:
+        await firestore.transition_sale_status(event_id, SaleStatus.PROCESSING)
+
+        bundles, ai_metadata = None, {}
+        for attempt in range(max_retries + 1):
+            try:
+                bundles, ai_metadata = await gemini.process_walkthrough(gcs_uri)
+                if bundles:
+                    break
+                logger.warning(f"Append extraction attempt {attempt + 1} returned no items for {event_id}.")
+            except Exception as exc:
+                if attempt == max_retries:
+                    raise
+                logger.warning(f"Append extraction attempt {attempt + 1} failed for {event_id}: {exc}. Retrying…")
+                await asyncio.sleep(2 ** attempt)
+
+        if not bundles:
+            raise ValueError("Append extraction returned no items after all retries")
+
+        for b in bundles:
+            bundle_id = await firestore.add_bundle(event_id, b.bundle_name, 0)
+            for item in b.items:
+                item_data = item.model_dump() if hasattr(item, "model_dump") else item.dict()
+                await firestore.add_item_to_bundle(event_id, bundle_id, item_data)
+
+        await firestore.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
+        await firestore.update_sale_metadata(event_id, {"appendExtractionMetadata": ai_metadata})
+        await notifier.notify_event(event_id, {
+            "status": SaleStatus.READY_FOR_REVIEW,
+            "message": f"Append complete. Added {len(bundles)} new bundle(s).",
+        })
+
+        logger.info(f"Append pipeline success | event={event_id} | {time.perf_counter() - start:.2f}s")
+
+        try:
+            await trigger_frame_extraction(event_id)
+        except Exception as exc:
+            logger.error(f"Failed to trigger frame extraction after append | event={event_id} | error={str(exc)}")
+
+    except Exception as exc:
+        logger.exception(f"Append pipeline failed for event {event_id}")
+        await firestore.transition_sale_status(event_id, SaleStatus.FAILED)
+        await notifier.notify_event(event_id, {"status": SaleStatus.FAILED, "error": str(exc)})
+
+
 async def run_frames_extraction_pipeline(
     event_id: str,
     gcs_uris: list[str],

@@ -17,6 +17,15 @@ class SaleInitResponse(BaseModel):
     gcs_uri: str
 
 
+class AppendInitResponse(BaseModel):
+    upload_url: str
+    gcs_uri: str
+
+
+class AppendProcessRequest(BaseModel):
+    gcs_uri: str
+
+
 class CaptureInitResponse(BaseModel):
     event_id: str
 
