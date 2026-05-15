@@ -6,7 +6,7 @@
 [![Cloud Run](https://img.shields.io/badge/Deploy-Cloud%20Run-4285F4.svg)](https://cloud.google.com/run)
 [![License](https://img.shields.io/badge/License-Proprietary-red.svg)](#license)
 
-AI-native FastAPI service that automates residential relocation inventory management. Processes walkthrough videos with Gemini vision, extracts and prices household items, and publishes them to a marketplace — all before move-out day.
+AI-native FastAPI service that automates residential relocation inventory management. Supports guided live capture (MediaPipe + per-frame Gemini) and walkthrough video upload. Extracts, prices, and publishes household items to a marketplace — all before move-out day.
 
 **Companion UI:** [`../shiftready-ui`](../shiftready-ui) — Next.js 16 / React 19 frontend.
 
@@ -34,12 +34,14 @@ graph LR
 
     subgraph System["ShiftReady Platform"]
         direction TB
-        Intake["1. Video Intake\n(Init Sale + GCS Upload)"]
-        Scanner["2. AI Vision Scan\n(Gemini Extraction)"]
+        Capture["1a. Live Capture\n(MediaPipe + per-frame Gemini)"]
+        Intake["1b. Video Intake\n(Init Sale + GCS Upload)"]
+        Scanner["2. AI Vision Scan\n(Gemini Extraction / Refinement)"]
         Cockpit["3. Review Cockpit\n(Human-in-the-Loop)"]
         Pricer["4. Urgency Pricer\n(Gemini Market Analysis)"]
         LiveDB[("Firestore\n(Inventory · Prices · Status)")]
 
+        Capture -->|finalize-v2| Scanner
         Intake -->|processing| Scanner
         Scanner -->|Populates| LiveDB
         LiveDB <-->|Review/Edit| Cockpit
@@ -48,13 +50,14 @@ graph LR
     end
 
     subgraph Cloud["External Services"]
-        GCS[("Google Cloud Storage\n(Walkthrough Video)")]
+        GCS[("Google Cloud Storage\n(Frames / Video)")]
         GSearch[("Google Search\n(Market Grounding)")]
     end
 
-    User -->|"A. Upload walkthrough"| Intake
+    User -->|"A. Live capture or video upload"| Capture
+    Capture -.->|Stores frames| GCS
     Intake -.->|Stores video| GCS
-    Scanner -.->|Reads video| GCS
+    Scanner -.->|Reads GCS| GCS
     User -->|"B. Verify inventory"| Cockpit
     User -->|"C. Set deadline + publish"| Cockpit
     Pricer -.->|Queries resale values| GSearch
@@ -62,32 +65,54 @@ graph LR
     Marketplace -->|Browse + Buy| Buyer
 ```
 
-### Pipeline
+### Pipeline (state machine)
 
 ```
 PENDING_UPLOAD → PROCESSING → READY_FOR_REVIEW → PRICING_IN_PROGRESS → LIVE → ARCHIVED
 ```
+
+Terminal states: `PARTIALLY_SOLD`, `EXPIRED`, `FAILED`, `ARCHIVED`.
 
 ### Project Layout
 
 ```
 shiftready-backend/
 ├── app/
-│   ├── main.py             # Entry point, middleware registration
+│   ├── main.py             # Entry point, CORS, middleware registration
 │   ├── routers/
-│   │   ├── sales.py        # Inventory & sales endpoints
-│   │   └── marketplace.py  # Public marketplace endpoints
+│   │   ├── sales.py        # Inventory, capture, and sales endpoints
+│   │   └── marketplace.py  # Public marketplace endpoints (no auth)
+│   ├── ai/
+│   │   ├── extraction.py   # ExtractionService: walkthrough, frames, single-frame, refinement
+│   │   ├── pricing.py      # PricingService: urgency-aware Sydney market pricing
+│   │   ├── schemas.py      # AI output schemas (SingleFrameResult, PricingList, RefinementResult)
+│   │   ├── schema_utils.py # Gemini-compatible JSON schema conversion
+│   │   └── client.py       # Gemini client factory
 │   ├── models/
-│   │   ├── inventory.py    # Domain models
+│   │   ├── inventory.py    # Domain models (RoomBundle, InventoryItem)
 │   │   └── schemas.py      # Request/response Pydantic schemas
+│   ├── repos/
+│   │   ├── sale_repo.py    # Sale CRUD
+│   │   ├── bundle_repo.py  # Bundle CRUD
+│   │   ├── item_repo.py    # Item CRUD
+│   │   ├── marketplace_repo.py
+│   │   └── user_repo.py
 │   ├── services/
-│   │   ├── firestore.py    # All Firestore CRUD
-│   │   ├── gemini.py       # Gemini vision + pricing calls
-│   │   ├── pipelines.py    # Background AI pipeline tasks
+│   │   ├── firestore.py    # Firestore facade (delegates to repos/)
+│   │   ├── gemini.py       # GeminiProcessor facade
+│   │   ├── pipelines.py    # Background AI tasks (extraction, refinement, pricing)
 │   │   ├── auth.py         # Firebase token validation
-│   │   └── notifier.py     # WebSocket connection manager
-│   └── utils/
-│       └── gcs.py          # Signed URL generation
+│   │   ├── notifier.py     # WebSocket ConnectionManager
+│   │   └── jobs.py         # Cloud Run Job triggers (frame extractor)
+│   ├── core/
+│   │   ├── config.py       # Settings (pydantic-settings)
+│   │   ├── deps.py         # FastAPI dependency injectors
+│   │   ├── logging.py      # Structured logging
+│   │   └── middleware.py   # Request middleware
+│   └── domain/
+│       └── status.py       # SaleStatus enum
+├── jobs/
+│   └── frame_extractor/    # Cloud Run Job: extract still frames from video at timestamps
 └── tests/
     ├── test_api.py
     ├── test_pipelines.py
@@ -102,8 +127,7 @@ shiftready-backend/
 | Layer | Technology |
 |---|---|
 | Framework | FastAPI + Uvicorn (async Python 3.13) |
-| AI | Google Gemini via `google-genai` SDK |
-| AI Orchestration | LangChain + LangSmith |
+| AI | Google Gemini 2.5 Flash via `google-genai` SDK |
 | Database | Google Cloud Firestore (Native mode) |
 | Storage | Google Cloud Storage |
 | Auth | Firebase Admin SDK (ID token validation) |
@@ -119,8 +143,8 @@ shiftready-backend/
 
 - Python 3.13+
 - Google Cloud CLI (`gcloud`) authenticated
-- A GCP project with Firestore (Native mode), GCS, and Vertex AI enabled
-- A Firebase project with Authentication enabled
+- GCP project with Firestore (Native mode), GCS, and Vertex AI enabled
+- Firebase project with Authentication enabled
 
 ### 1. Clone and install
 
@@ -151,7 +175,7 @@ GCP_REGION=australia-southeast1
 GOOGLE_APPLICATION_CREDENTIALS=./shiftready-backend-service-account.json
 ```
 
-Place your GCP service account key at `shiftready-backend-service-account.json` in the project root. This file is gitignored — never commit it.
+Place your GCP service account key at `shiftready-backend-service-account.json`. This file is gitignored — never commit it.
 
 ### 3. Run
 
@@ -167,48 +191,59 @@ uvicorn app.main:app --reload --port 8080
 
 ### Local authentication
 
-Any token prefixed with `dev_` bypasses Firebase verification when `K_SERVICE` is not set (i.e., outside Cloud Run). Use `dev_<your-name>` as a Bearer token in Swagger or curl.
+Tokens prefixed with `dev_` bypass Firebase verification when `K_SERVICE` is absent (outside Cloud Run).
 
-**Swagger:** Click **Authorize** → enter `dev_yourname` → Authorize.
+**Swagger:** Click **Authorize** → enter `dev_yourname`.
 
 **curl:**
 ```bash
-curl -X POST "http://localhost:8080/api/v1/sales/init" \
-  -H "Authorization: Bearer dev_yourname" \
-  -H "Content-Type: application/json" \
-  -d '{"filename": "walkthrough.mp4"}'
+curl -X POST "http://localhost:8080/api/v1/sales/init-capture" \
+  -H "Authorization: Bearer dev_yourname"
 ```
 
 ---
 
 ## API Reference
 
-All endpoints are prefixed with `/api/v1`. Protected endpoints require `Authorization: Bearer <token>`.
+All endpoints prefixed `/api/v1`. Protected endpoints require `Authorization: Bearer <token>`.
 
 ### Sales & Inventory (`/sales`)
 
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/sales` | Required | List all sales for the authenticated user |
+| `POST` | `/sales/init` | Required | Initialize video-upload sale; returns GCS signed PUT URL |
+| `POST` | `/sales/init-capture` | Required | Initialize live-capture sale (no video needed) |
+| `POST` | `/sales/{id}/process` | Owner | Trigger Gemini extraction from uploaded video |
+| `POST` | `/sales/{id}/process-frames` | Owner | Upload JPEG frames + run batch Gemini extraction |
+| `POST` | `/sales/{id}/capture/frame` | Owner | Per-frame live capture: upload JPEG, run Gemini single-frame identify, return name/brand/price/gcs_uri |
+| `POST` | `/sales/{id}/capture/finalize` | Owner | Finalize capture (legacy): trigger batch extraction on accumulated GCS URIs |
+| `POST` | `/sales/{id}/capture/finalize-v2` | Owner | Finalize capture (Phase 2): accept pre-analyzed items, run refinement + pricing pipeline |
+| `POST` | `/sales/{id}/append-init` | Owner | Generate signed URL to append a second video to existing sale |
+| `POST` | `/sales/{id}/append-process` | Owner | Trigger append extraction (adds bundles without clearing existing) |
+| `GET` | `/sales/{id}/status` | Owner | Poll current sale status |
+| `GET` | `/sales/{id}/summary` | Owner | Full inventory hierarchy with signed URLs for video and item images |
+| `WS` | `/sales/{id}/ws` | Owner | WebSocket stream for real-time status updates |
+| `POST` | `/sales/{id}/estimate` | Owner | Trigger Gemini pricing analysis |
+| `POST` | `/sales/{id}/publish` | Owner | Publish sale to the marketplace |
+| `POST` | `/sales/{id}/unpublish` | Owner | Unpublish an active sale |
+| `POST` | `/sales/{id}/bundles` | Owner | Add a bundle |
+| `DELETE` | `/sales/{id}/bundles/{bundle_id}` | Owner | Remove a bundle |
+| `POST` | `/sales/{id}/bundles/{bundle_id}/items` | Owner | Add a manual item |
+| `PATCH` | `/sales/{id}/bundles/{bundle_id}/items/{item_id}` | Owner | Update an item |
+| `DELETE` | `/sales/{id}/bundles/{bundle_id}/items/{item_id}` | Owner | Remove an item |
+| `POST` | `/sales/{id}/bundles/{bundle_id}/items/{item_id}/images/upload-urls` | Owner | Get signed PUT URLs for item images |
+| `POST` | `/sales/{id}/bundles/{bundle_id}/items/{item_id}/images/confirm` | Owner | Confirm uploaded images (write to Firestore) |
+| `DELETE` | `/sales/{id}/bundles/{bundle_id}/items/{item_id}/images/{image_id}` | Owner | Delete an item image |
+| `PATCH` | `/sales/{id}/bundles/{bundle_id}/items/{item_id}/images/{image_id}/cover` | Owner | Set cover image |
+
+### Marketplace (`/marketplace`) — no auth required for browsing
+
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/sales` | List all sales for the authenticated user |
-| `POST` | `/sales/init` | Initialize a sale; returns a GCS signed PUT URL |
-| `POST` | `/sales/{id}/process` | Trigger Gemini vision extraction |
-| `GET` | `/sales/{id}/status` | Poll current sale status |
-| `GET` | `/sales/{id}/summary` | Full inventory hierarchy with signed video URL |
-| `WS` | `/sales/{id}/ws` | WebSocket stream for real-time status updates |
-| `POST` | `/sales/{id}/estimate` | Trigger Gemini pricing analysis |
-| `POST` | `/sales/{id}/publish` | Publish sale to the marketplace |
-| `POST` | `/sales/{id}/unpublish` | Unpublish an active sale |
-| `POST` | `/sales/{id}/bundles` | Add a bundle to the sale |
-| `DELETE` | `/sales/{id}/bundles/{bundle_id}` | Remove a bundle |
-| `POST` | `/sales/{id}/bundles/{bundle_id}/items` | Add a manual item to a bundle |
-| `PATCH` | `/sales/{id}/bundles/{bundle_id}/items/{item_id}` | Update an item |
-| `DELETE` | `/sales/{id}/bundles/{bundle_id}/items/{item_id}` | Remove an item |
-
-### Marketplace (`/marketplace`)
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/marketplace/search` | Search live sales (supports suburb + keyword filters) |
+| `GET` | `/marketplace/sales` | List all LIVE sales |
+| `GET` | `/marketplace/search` | Search with `?q=keyword&suburb=suburb` |
+| `GET` | `/marketplace/sales/{event_id}` | Public sale detail (bundles + items) |
 | `GET` | `/marketplace/items/{event_id}/{bundle_id}/{item_id}` | Item detail (seller info masked for non-owners) |
 
 ---
@@ -217,51 +252,15 @@ All endpoints are prefixed with `/api/v1`. Protected endpoints require `Authoriz
 
 | Status | Description |
 |---|---|
-| `PENDING_UPLOAD` | Sale record created; waiting for GCS video upload |
-| `PROCESSING` | Gemini Vision extracting items and bundles from video |
-| `READY_FOR_REVIEW` | Inventory ready; user can edit before pricing |
+| `PENDING_UPLOAD` | Sale record created; awaiting video upload or capture start |
+| `PROCESSING` | Gemini extracting or refining items |
+| `READY_FOR_REVIEW` | Inventory ready; seller can edit before pricing |
 | `PRICING_IN_PROGRESS` | Gemini analysing Sydney market for price estimates |
-| `LIVE` | Sale published and publicly visible on marketplace |
+| `LIVE` | Published and publicly visible on marketplace |
+| `PARTIALLY_SOLD` | Some items sold; still active |
 | `ARCHIVED` | Move complete; record frozen |
-
-Terminal states: `PARTIALLY_SOLD`, `EXPIRED`, `FAILED`, `ARCHIVED`.
-
----
-
-## Future TODOs
-
-1. Guided live capture, not dump-and-pray
-Problem: mover shoots 8-min shaky walkthrough. Misses items in cupboards, brand labels never in frame, blur kills frames. Re-shoot = abandon.
-
-Fix: in-app camera w/ realtime co-pilot (Gemini Live API or on-device MediaPipe + streaming chunks to backend).
-
-Detects room change → "Kitchen detected, pan slowly left."
-Spots furniture w/o visible label → "Tap sofa to mark, then closeup of tag underneath."
-Progress bar: rooms covered, items found, missing-data flags.
-Uploads chunks during capture → extraction starts before user hits stop. Perceived latency drops from minutes to seconds.
-Implementation: stream video/webm chunks to GCS, fire extraction per-chunk, merge bundles. Reuse existing pipeline, swap single-shot for incremental.
-
-2. Two-pass extraction w/ targeted re-prompt
-Problem: one Gemini call guesses brand/year/price from blurry mid-pan frame. Hallucinates "Samsung" on every TV. predicted_original_price often wildly off.
-
-Fix: confidence-aware loop.
-
-Pass 1 (current): wide identify → bundles + items + per-field confidence (add to schema).
-Pass 2: backend extracts high-res frame crops at video_timestamp for each low-confidence item, re-queries Gemini w/ crop + grounded web search ("find this exact model") → fills brand/model/year w/ citations stored in pricing_reasoning-style field.
-Pass 3 (user-facing): items still unresolved become a short "1-tap task list" — "Snap photo of TV back panel for model number". Mover does 4 closeups instead of editing 40 forms.
-LLM win: smaller targeted prompts > one mega-prompt. Cheaper, more accurate, auditable.
-
-3. Conversational item refinement, kill the form
-Problem: review cockpit = 40 cards × 8 fields each. Tedious. Movers bail.
-
-Fix: chat-per-item w/ multimodal context.
-
-Card opens chat: "IKEA Malm, bought 2019, small scratch on top" → LLM patches structured fields + recomputes price + updates condition.
-Voice input ("ok Google" style) — mover talks while packing.
-Cross-item ops: "Everything in kitchen is 5 years old" → bulk update.
-"Did you miss anything?" — mover types "there's a dyson vacuum in hall closet" → item created w/o video reshoot.
-Frame scrubber w/ tap-to-add: "that thing top-left at 2:34" → Gemini re-extracts that crop only.
-Backend: new PATCH /items/{id}/refine taking message + optional image, returns diff + new pricing. Reuses pricing service.
+| `FAILED` | Pipeline error; recoverable by re-triggering |
+| `EXPIRED` | Passed move-out date without publishing |
 
 ---
 
@@ -287,21 +286,20 @@ Tests cover: sale lifecycle, authorization, inventory CRUD, marketplace, pipelin
 
 ## CI/CD
 
-`cloudbuild.yaml` runs on every push:
+`cloudbuild.yaml` runs on every push to `master`:
 
 1. **Lint** — `ruff check` (excludes `scripts/`)
-2. **Test** — `pytest` with coverage; report uploaded as XML artifact
-3. **Build** — Docker image built with layer caching from the previous `latest` tag
-4. **Push** — Tagged `SHORT_SHA` and `latest` to Google Artifact Registry
-5. **Deploy** — Cloud Run deployment to `australia-southeast1`, unauthenticated access
+2. **Build** — Docker image with layer caching from previous `latest`
+3. **Push** — Tagged `SHORT_SHA` and `latest` to Google Artifact Registry
+4. **Firestore indexes** — deploy index configuration
+5. **Deploy backend** — Cloud Run (`australia-southeast1`), unauthenticated
+6. **Build + deploy frame-extractor** — separate Cloud Run Job for video frame extraction
 
 Machine: `E2_HIGHCPU_8` | Timeout: 1200s
 
 ---
 
 ## Working with the Full Stack
-
-Both repos are designed to be edited together in a single Claude Code session:
 
 ```bash
 # From the backend directory
