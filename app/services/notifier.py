@@ -8,11 +8,13 @@ logger = logging.getLogger(__name__)
 
 
 class ConnectionManager:
-    """Manages active WebSocket connections per sale event."""
+    """Manages active WebSocket connections per sale event and per user."""
 
     def __init__(self):
-        # Using a set prevents duplicate registrations and is O(1) for removals
         self.active_connections: dict[str, set[WebSocket]] = {}
+        self.user_connections: dict[str, set[WebSocket]] = {}
+
+    # ── sale event WS ─────────────────────────────────────────────────────────
 
     async def connect(self, event_id: str, websocket: WebSocket) -> None:
         await websocket.accept()
@@ -22,8 +24,6 @@ class ConnectionManager:
 
     def disconnect(self, event_id: str, websocket: WebSocket) -> None:
         if event_id in self.active_connections:
-            # discard() is safe: no KeyError if the socket was never registered
-            # (e.g. connection dropped before accept completed)
             self.active_connections[event_id].discard(websocket)
             if not self.active_connections[event_id]:
                 del self.active_connections[event_id]
@@ -34,7 +34,6 @@ class ConnectionManager:
             logger.debug("No active WS connections for event %s; notification dropped.", event_id)
             return
 
-        # Determine log display name: prefer status, then type, then generic
         display_status = message.get("status") or message.get("type") or "DATA_UPDATE"
         if isinstance(display_status, Enum):
             display_status = display_status.value
@@ -46,5 +45,32 @@ class ConnectionManager:
                 await connection.send_json(message)
             except Exception as exc:
                 logger.error("Failed to send WS message to client: %s", exc)
+
+    # ── user-level WS (messaging) ─────────────────────────────────────────────
+
+    async def connect_user(self, uid: str, websocket: WebSocket) -> None:
+        await websocket.accept()
+        if uid not in self.user_connections:
+            self.user_connections[uid] = set()
+        self.user_connections[uid].add(websocket)
+
+    def disconnect_user(self, uid: str, websocket: WebSocket) -> None:
+        if uid in self.user_connections:
+            self.user_connections[uid].discard(websocket)
+            if not self.user_connections[uid]:
+                del self.user_connections[uid]
+
+    async def notify_user(self, uid: str, message: dict[str, Any]) -> None:
+        connections = self.user_connections.get(uid, set())
+        if not connections:
+            logger.debug("No active user WS connections for uid %s; notification dropped.", uid)
+            return
+        logger.info("Notifying uid %s via %d WS connection(s)", uid, len(connections))
+        for connection in connections:
+            try:
+                await connection.send_json(message)
+            except Exception as exc:
+                logger.error("Failed to send user WS message: %s", exc)
+
 
 notifier = ConnectionManager()

@@ -15,6 +15,7 @@ from fastapi import Depends
 
 from app.services.firestore import FirestoreService
 from app.services.gemini import GeminiProcessor
+from app.services.messaging import MessagingService
 from app.utils.gcs import GCSUtils
 
 
@@ -40,9 +41,15 @@ def get_bucket() -> str:
     return BUCKET_NAME
 
 
+def get_messaging() -> MessagingService:
+    from app.services import messaging_svc
+    return messaging_svc
+
+
 # --- type aliases (use these in router signatures) ---
 
 FirestoreDep = Annotated[FirestoreService, Depends(get_firestore)]
 GeminiDep    = Annotated[GeminiProcessor,  Depends(get_gemini)]
 GCSDep       = Annotated[GCSUtils,         Depends(get_gcs)]
 BucketDep    = Annotated[str,              Depends(get_bucket)]
+MessagingDep = Annotated[MessagingService, Depends(get_messaging)]

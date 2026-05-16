@@ -91,7 +91,14 @@ async def get_public_sale(
             else:
                 item["image_url"] = None
 
-    return {**sale, "is_authenticated": user is not None}
+    seller_username = None
+    seller_id = sale.get("sellerId")
+    if seller_id:
+        seller_doc = await firestore.get_user(seller_id)
+        if seller_doc:
+            seller_username = seller_doc.get("username")
+
+    return {**sale, "sellerUsername": seller_username, "is_authenticated": user is not None}
 
 
 @router.get("/items/{event_id}/{bundle_id}/{item_id}")

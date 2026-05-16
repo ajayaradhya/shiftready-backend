@@ -173,3 +173,79 @@ class SaleStatusResponse(BaseModel):
     createdAt: datetime
     itemCount: int = 0
     totalValue: float = 0.0
+
+
+# --- User / Username Schemas ---
+
+class UserProfileResponse(BaseModel):
+    id: str
+    username: str
+    usernameSetByUser: bool
+    usernameChangedAt: datetime | None = None
+
+
+class UsernameAvailableResponse(BaseModel):
+    available: bool
+    username: str
+
+
+class UsernameUpdateRequest(BaseModel):
+    username: str
+
+
+class PublicUserResponse(BaseModel):
+    username: str
+    joinedAt: datetime | None = None
+
+
+# --- Messaging Schemas ---
+
+class MessageContext(BaseModel):
+    saleEventId: str
+    bundleId: str | None = None
+    itemId: str | None = None
+
+
+class SendMessageRequest(BaseModel):
+    text: str
+    context: MessageContext | None = None
+
+
+class MessageResponse(BaseModel):
+    id: str
+    senderId: str
+    text: str
+    createdAt: str | None = None
+    type: str = "text"
+    context: MessageContext | None = None
+
+
+class ConversationStartRequest(BaseModel):
+    otherUserId: str
+    initialMessage: str | None = None
+    context: MessageContext | None = None
+
+
+class ConversationStartResponse(BaseModel):
+    conversationId: str
+    created: bool
+
+
+class ConversationSummaryResponse(BaseModel):
+    id: str
+    otherUserId: str | None = None
+    otherUsername: str | None = None
+    lastMessage: str | None = None
+    lastMessageAt: str | None = None
+    unreadCount: int = 0
+    status: str = "active"
+    updatedAt: str | None = None
+
+
+class MessagesListResponse(BaseModel):
+    messages: list[MessageResponse]
+    conversationId: str
+
+
+class UnreadCountResponse(BaseModel):
+    unreadCount: int

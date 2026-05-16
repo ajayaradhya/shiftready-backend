@@ -170,6 +170,7 @@ class MarketplaceRepo:
 
         return {
             "eventId": event_id,
+            "sellerId": sale_data.get("sellerId"),
             "suburb": sale_data.get("suburb"),
             "state": sale_data.get("state"),
             "moveOutDate": sale_data.get("moveOutDate"),

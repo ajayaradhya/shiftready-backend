@@ -3,6 +3,7 @@ from google.cloud import firestore
 from app.core.config import settings
 from app.domain.status import SaleStatus
 from app.repos.bundle_repo import BundleRepo
+from app.repos.conversation_repo import ConversationRepo
 from app.repos.item_repo import ItemRepo
 from app.repos.marketplace_repo import MarketplaceRepo
 from app.repos.sale_repo import SaleRepo
@@ -28,10 +29,23 @@ class FirestoreService:
         self.items = ItemRepo(db, self.bundles)
         self.users = UserRepo(db)
         self.marketplace = MarketplaceRepo(db)
+        self.conversations = ConversationRepo(db)
 
     # --- user ---
-    async def upsert_user(self, user_id: str, email: str, name: str | None = None) -> None:
+    async def upsert_user(self, user_id: str, email: str, name: str | None = None) -> str:
         return await self.users.upsert_user(user_id, email, name)
+
+    async def get_user(self, user_id: str) -> dict | None:
+        return await self.users.get_user(user_id)
+
+    async def get_user_by_username(self, username: str) -> dict | None:
+        return await self.users.get_by_username(username)
+
+    async def update_username(self, user_id: str, new_username: str) -> None:
+        return await self.users.update_username(user_id, new_username)
+
+    async def is_username_available(self, username: str, requesting_uid: str | None = None) -> bool:
+        return await self.users.is_username_available(username, requesting_uid)
 
     # --- sale ---
     async def create_sale_event(self, user_id: str, video_url: str) -> str:

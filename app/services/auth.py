@@ -22,6 +22,7 @@ class User(BaseModel):
     id: str
     email: str
     name: str | None = None
+    username: str | None = None
 
 
 async def get_current_user(
@@ -50,18 +51,21 @@ async def get_current_user(
 
     # Dev-token bypass (local only — absent when K_SERVICE is set by Cloud Run)
     if not os.getenv("K_SERVICE") and id_token.startswith("dev_"):
-        user = User(id=id_token, email=f"{id_token}@shiftready.test", name="Dev User")
-        await firestore.upsert_user(user.id, user.email, user.name)
+        username = await firestore.upsert_user(id_token, f"{id_token}@shiftready.test", "Dev User")
+        user = User(id=id_token, email=f"{id_token}@shiftready.test", name="Dev User", username=username)
         return user
 
     try:
         decoded = await run_in_threadpool(auth.verify_id_token, id_token)
+        username = await firestore.upsert_user(
+            decoded["uid"], decoded.get("email", ""), decoded.get("name")
+        )
         user = User(
             id=decoded["uid"],
             email=decoded.get("email", ""),
             name=decoded.get("name"),
+            username=username,
         )
-        await firestore.upsert_user(user.id, user.email, user.name)
         return user
     except Exception as exc:
         raise HTTPException(
