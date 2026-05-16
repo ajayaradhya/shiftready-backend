@@ -122,7 +122,7 @@ async def unblock_conversation(conv_id: str, current_user: CurrentUser, messagin
 
 
 @router.websocket("/ws")
-async def user_ws(websocket: WebSocket, token: str = Query(...), firestore: FirestoreDep = Depends()):
+async def user_ws(websocket: WebSocket, firestore: FirestoreDep, token: str = Query(...)):
     from app.services.auth import get_current_user as _gcv
     try:
         user = await _gcv(websocket, token=token, firestore=firestore)

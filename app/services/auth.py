@@ -27,8 +27,8 @@ class User(BaseModel):
 
 async def get_current_user(
     connection: HTTPConnection,
+    firestore: FirestoreDep,
     token: str | None = Query(None),
-    firestore: FirestoreDep = None,
 ) -> User:
     """
     Verifies the Firebase ID Token from Bearer header or ?token= query param.
@@ -90,11 +90,11 @@ async def validate_sale_owner(
 
 async def get_optional_user(
     connection: HTTPConnection,
+    firestore: FirestoreDep,
     token: str | None = Query(None),
-    firestore: FirestoreDep = None,
 ) -> User | None:
     """Allows anonymous browsing; returns None when no valid token is present."""
     try:
-        return await get_current_user(connection, token, firestore)
+        return await get_current_user(connection, firestore, token)
     except HTTPException:
         return None

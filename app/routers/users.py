@@ -32,9 +32,9 @@ async def get_me(current_user: CurrentUser, firestore: FirestoreDep):
 
 @router.get("/username-available", response_model=UsernameAvailableResponse)
 async def check_username(
+    firestore: FirestoreDep,
     u: str = Query(..., min_length=3, max_length=20),
     current_user: User | None = Depends(get_current_user),
-    firestore: FirestoreDep = None,
 ):
     if not is_valid_username(u):
         return UsernameAvailableResponse(available=False, username=u)
