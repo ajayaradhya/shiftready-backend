@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.deps import FirestoreDep, GCSDep
@@ -107,6 +109,7 @@ async def get_item_detail(
     bundle_id: str,
     item_id: str,
     firestore: FirestoreDep,
+    gcs: GCSDep,
     user: User | None = Depends(get_optional_user),
 ):
     """Detailed view for a single item."""
@@ -114,20 +117,42 @@ async def get_item_detail(
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    # Public view — minimal fields for anonymous browsers
+    # Generate cover image signed URL
+    image_url = None
+    images = item.get("images") or []
+    cover = next((img for img in images if img.get("is_cover")), images[0] if images else None)
+    if cover:
+        gcs_path = cover.get("gcs_path")
+        if gcs_path and gcs_path.startswith("gs://"):
+            try:
+                s = gcs_path.replace("gs://", "").split("/", 1)
+                image_url = gcs.generate_download_url(s[0], s[1])
+            except Exception:
+                pass
+
+    # Fetch bundle name and sale context in parallel
+    bundle_ref = firestore.db.collection("saleEvents").document(event_id).collection("bundles").document(bundle_id)
+    sale_ref = firestore.db.collection("saleEvents").document(event_id)
+    bundle_doc, sale_doc = await asyncio.gather(bundle_ref.get(), sale_ref.get())
+
+    bundle_data = bundle_doc.to_dict() if bundle_doc.exists else {}
+    sale_data = sale_doc.to_dict() if sale_doc.exists else {}
+
     response: dict = {
         "name": item.get("name"),
-        "price": item.get("actual_listing_price"),
+        "brand": item.get("brand"),
         "condition": item.get("condition"),
+        "price": item.get("actual_listing_price"),
+        "original_price": item.get("actual_original_price") or item.get("predicted_original_price"),
+        "year": item.get("actual_year_of_purchase") or item.get("predicted_year_of_purchase"),
+        "image_url": image_url,
+        "bundle_id": bundle_id,
+        "bundle_name": bundle_data.get("name"),
+        "suburb": sale_data.get("suburb"),
+        "seller_id": sale_data.get("sellerId"),
     }
 
     if user:
-        # Extended data for authenticated users (pricing reasoning, exact purchase year)
-        response.update({
-            "brand": item.get("brand"),
-            "purchase_year": item.get("actual_year_of_purchase") or item.get("predicted_year_of_purchase"),
-            "reasoning": item.get("pricing_reasoning"),
-            "seller_id": item.get("sellerId"),
-        })
+        response["pricing_reasoning"] = item.get("pricing_reasoning")
 
     return response
