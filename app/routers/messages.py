@@ -38,7 +38,6 @@ async def start_conversation(
         raise HTTPException(status_code=404, detail="User not found")
 
     conv_id, conv_data = await messaging.start_conversation(current_user.id, body.otherUserId)
-    created = conv_data.get("createdAt") is None  # rough heuristic; repo sets SERVER_TIMESTAMP
 
     if body.initialMessage:
         ctx = body.context.model_dump() if body.context else None
