@@ -34,7 +34,7 @@ class MessagingService:
                     "conversationId": conv_id,
                     "message": _serialize_msg(msg),
                 })
-        return msg
+        return _serialize_msg(msg)
 
     async def list_conversations(self, uid: str, user_repo) -> list[dict]:
         convs = await self.convs.list_user_conversations(uid)

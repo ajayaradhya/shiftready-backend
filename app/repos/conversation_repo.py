@@ -122,10 +122,11 @@ class ConversationRepo:
         await self._check_rate_limit(conv_id, sender_uid)
 
         msg_ref = self._msg_col(conv_id).document()
+        now = datetime.now(timezone.utc)
         msg_data = {
             "senderId": sender_uid,
             "text": text,
-            "createdAt": firestore.SERVER_TIMESTAMP,
+            "createdAt": now,
             "type": "text",
             "deletedAt": None,
         }
