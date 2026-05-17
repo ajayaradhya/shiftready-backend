@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 
@@ -124,3 +125,86 @@ class UserRepo:
         if requesting_uid and snap.get("uid") == requesting_uid:
             return True
         return False
+
+    # --- saves ---
+
+    async def save_sale(self, user_id: str, event_id: str, metadata: dict) -> None:
+        ref = (
+            self.db.collection("users")
+            .document(user_id)
+            .collection("savedSales")
+            .document(event_id)
+        )
+        await ref.set({**metadata, "savedAt": firestore.SERVER_TIMESTAMP})
+
+    async def unsave_sale(self, user_id: str, event_id: str) -> None:
+        await (
+            self.db.collection("users")
+            .document(user_id)
+            .collection("savedSales")
+            .document(event_id)
+            .delete()
+        )
+
+    async def is_sale_saved(self, user_id: str, event_id: str) -> bool:
+        snap = await (
+            self.db.collection("users")
+            .document(user_id)
+            .collection("savedSales")
+            .document(event_id)
+            .get()
+        )
+        return snap.exists
+
+    async def save_item(self, user_id: str, item_id: str, metadata: dict) -> None:
+        ref = (
+            self.db.collection("users")
+            .document(user_id)
+            .collection("savedItems")
+            .document(item_id)
+        )
+        await ref.set({**metadata, "savedAt": firestore.SERVER_TIMESTAMP})
+
+    async def unsave_item(self, user_id: str, item_id: str) -> None:
+        await (
+            self.db.collection("users")
+            .document(user_id)
+            .collection("savedItems")
+            .document(item_id)
+            .delete()
+        )
+
+    async def is_item_saved(self, user_id: str, item_id: str) -> bool:
+        snap = await (
+            self.db.collection("users")
+            .document(user_id)
+            .collection("savedItems")
+            .document(item_id)
+            .get()
+        )
+        return snap.exists
+
+    async def get_saved(self, user_id: str) -> dict:
+        user_ref = self.db.collection("users").document(user_id)
+        sales_snaps, items_snaps = await asyncio.gather(
+            user_ref.collection("savedSales")
+                .order_by("savedAt", direction=firestore.Query.DESCENDING)
+                .get(),
+            user_ref.collection("savedItems")
+                .order_by("savedAt", direction=firestore.Query.DESCENDING)
+                .get(),
+        )
+
+        saved_sales = []
+        for doc in sales_snaps:
+            data = doc.to_dict() or {}
+            data["eventId"] = doc.id
+            saved_sales.append(data)
+
+        saved_items = []
+        for doc in items_snaps:
+            data = doc.to_dict() or {}
+            data["itemId"] = doc.id
+            saved_items.append(data)
+
+        return {"saved_sales": saved_sales, "saved_items": saved_items}

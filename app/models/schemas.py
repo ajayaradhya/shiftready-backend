@@ -249,3 +249,36 @@ class MessagesListResponse(BaseModel):
 
 class UnreadCountResponse(BaseModel):
     unreadCount: int
+
+
+# --- Saved / Watchlist Schemas ---
+
+class SavedSaleData(BaseModel):
+    eventId: str
+    suburb: str | None = None
+    state: str | None = None
+    itemCount: int = 0
+    moveOutDate: str | None = None
+    savedAt: datetime | None = None
+
+
+class SavedItemData(BaseModel):
+    itemId: str
+    bundleId: str | None = None
+    eventId: str | None = None
+    name: str | None = None
+    brand: str | None = None
+    condition: str | None = None
+    price: float | None = None
+    suburb: str | None = None
+    image_url: str | None = None
+    savedAt: datetime | None = None
+
+
+class SavedListResponse(BaseModel):
+    saved_sales: list[SavedSaleData]
+    saved_items: list[SavedItemData]
+
+
+class SaveToggleResponse(BaseModel):
+    saved: bool

@@ -2,9 +2,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.core.deps import FirestoreDep
+from app.core.deps import FirestoreDep, GCSDep
 from app.models.schemas import (
     PublicUserResponse,
+    SavedListResponse,
     UserProfileResponse,
     UsernameAvailableResponse,
     UsernameUpdateRequest,
@@ -77,4 +78,27 @@ async def get_public_user(username: str, firestore: FirestoreDep):
     return PublicUserResponse(
         username=user_doc.get("username", username),
         joinedAt=user_doc.get("createdAt"),
+    )
+
+
+@router.get("/me/saved", response_model=SavedListResponse)
+async def get_saved(current_user: CurrentUser, firestore: FirestoreDep, gcs: GCSDep):
+    raw = await firestore.get_saved(current_user.id)
+
+    processed_items = []
+    for item in raw["saved_items"]:
+        gcs_path = item.pop("gcs_path", None)
+        image_url = None
+        if gcs_path and gcs_path.startswith("gs://"):
+            try:
+                parts = gcs_path.replace("gs://", "").split("/", 1)
+                image_url = gcs.generate_download_url(parts[0], parts[1])
+            except Exception:
+                pass
+        item["image_url"] = image_url
+        processed_items.append(item)
+
+    return SavedListResponse(
+        saved_sales=raw["saved_sales"],
+        saved_items=processed_items,
     )

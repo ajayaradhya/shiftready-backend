@@ -47,6 +47,27 @@ class FirestoreService:
     async def is_username_available(self, username: str, requesting_uid: str | None = None) -> bool:
         return await self.users.is_username_available(username, requesting_uid)
 
+    async def save_sale(self, user_id: str, event_id: str, metadata: dict) -> None:
+        return await self.users.save_sale(user_id, event_id, metadata)
+
+    async def unsave_sale(self, user_id: str, event_id: str) -> None:
+        return await self.users.unsave_sale(user_id, event_id)
+
+    async def is_sale_saved(self, user_id: str, event_id: str) -> bool:
+        return await self.users.is_sale_saved(user_id, event_id)
+
+    async def save_item(self, user_id: str, item_id: str, metadata: dict) -> None:
+        return await self.users.save_item(user_id, item_id, metadata)
+
+    async def unsave_item(self, user_id: str, item_id: str) -> None:
+        return await self.users.unsave_item(user_id, item_id)
+
+    async def is_item_saved(self, user_id: str, item_id: str) -> bool:
+        return await self.users.is_item_saved(user_id, item_id)
+
+    async def get_saved(self, user_id: str) -> dict:
+        return await self.users.get_saved(user_id)
+
     # --- sale ---
     async def create_sale_event(self, user_id: str, video_url: str) -> str:
         return await self.sales.create_sale_event(user_id, video_url)
