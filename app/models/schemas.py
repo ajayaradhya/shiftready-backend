@@ -173,6 +173,7 @@ class SaleStatusResponse(BaseModel):
     createdAt: datetime
     itemCount: int = 0
     totalValue: float = 0.0
+    preview_images: list[str] = []
 
 
 # --- User / Username Schemas ---

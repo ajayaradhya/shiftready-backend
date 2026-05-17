@@ -53,6 +53,7 @@ class SaleRepo:
             data = {**d.to_dict(), "id": d.id}
             item_count = 0
             total_value = 0.0
+            preview_paths: list[str] = []
             async for b in self._ref(d.id).collection("bundles").stream():
                 async for item in b.reference.collection("items").stream():
                     item_data = item.to_dict()
@@ -63,8 +64,14 @@ class SaleRepo:
                         or 0
                     )
                     total_value += price
+                    if len(preview_paths) < 5:
+                        images = item_data.get("images") or []
+                        cover = next((img for img in images if img.get("is_cover")), images[0] if images else None)
+                        if cover and cover.get("gcs_path"):
+                            preview_paths.append(cover["gcs_path"])
             data["itemCount"] = item_count
             data["totalValue"] = total_value
+            data["preview_images"] = preview_paths
             results.append(data)
         return results
 

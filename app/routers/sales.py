@@ -192,9 +192,18 @@ async def start_processing(
 @router.get("/", response_model=list[SaleStatusResponse])
 async def list_sales(
     firestore: FirestoreDep,
+    gcs: GCSDep,
     current_user: User = Depends(get_current_user),
 ):
-    return await firestore.list_all_sales(current_user.id)
+    sales = await firestore.list_all_sales(current_user.id)
+    for sale in sales:
+        signed: list[str] = []
+        for path in sale.get("preview_images", []):
+            if path.startswith("gs://"):
+                parts = path.replace("gs://", "").split("/", 1)
+                signed.append(gcs.generate_download_url(parts[0], parts[1]))
+        sale["preview_images"] = signed
+    return sales
 
 
 @router.get("/{event_id}/summary")

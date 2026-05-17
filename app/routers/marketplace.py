@@ -13,9 +13,20 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 @router.get("/sales")
-async def list_live_sales(firestore: FirestoreDep):
+async def list_live_sales(firestore: FirestoreDep, gcs: GCSDep):
     """List all LIVE sales — used by the landing page sales scroll."""
-    return await firestore.list_live_sales()
+    sales = await firestore.list_live_sales()
+    for sale in sales:
+        signed: list[str] = []
+        for path in sale.get("preview_images", []):
+            if path.startswith("gs://"):
+                try:
+                    parts = path.replace("gs://", "").split("/", 1)
+                    signed.append(gcs.generate_download_url(parts[0], parts[1]))
+                except Exception:
+                    pass
+        sale["preview_images"] = signed
+    return sales
 
 
 @router.get("/search")

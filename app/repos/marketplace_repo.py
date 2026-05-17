@@ -104,11 +104,18 @@ class MarketplaceRepo:
         for sale_doc, bundles, per_bundle_items in zip(live_docs, bundle_snapshots, item_snapshots):
             data = sale_doc.to_dict()
             all_items = [item for items in per_bundle_items for item in items]
-            prices = [
-                i.to_dict().get("actual_listing_price")
-                for i in all_items
-                if i.to_dict().get("actual_listing_price") is not None
-            ]
+            prices = []
+            preview_paths: list[str] = []
+            for i in all_items:
+                d = i.to_dict()
+                price = d.get("actual_listing_price")
+                if price is not None:
+                    prices.append(price)
+                if len(preview_paths) < 4:
+                    images = d.get("images") or []
+                    cover = next((img for img in images if img.get("is_cover")), images[0] if images else None)
+                    if cover and cover.get("gcs_path"):
+                        preview_paths.append(cover["gcs_path"])
             results.append({
                 "eventId": sale_doc.id,
                 "suburb": data.get("suburb"),
@@ -116,6 +123,7 @@ class MarketplaceRepo:
                 "itemCount": len(all_items),
                 "minPrice": min(prices) if prices else None,
                 "publishedAt": data.get("publishedAt"),
+                "preview_images": preview_paths,
             })
         return results
 
