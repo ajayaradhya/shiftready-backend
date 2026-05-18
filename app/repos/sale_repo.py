@@ -118,3 +118,45 @@ class SaleRepo:
             data["bundles"].append(b_data)
 
         return data
+
+    async def archive_sale(self, event_id: str) -> None:
+        await self._ref(event_id).update({
+            "status": SaleStatus.ARCHIVED,
+            "deletedAt": firestore.SERVER_TIMESTAMP,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+            "statusHistory": firestore.ArrayUnion([
+                {"status": SaleStatus.ARCHIVED, "timestamp": datetime.now(timezone.utc)}
+            ]),
+        })
+
+    async def hard_delete_sale(self, event_id: str) -> list[str]:
+        """Cascade-delete all subcollections + sale doc. Returns GCS paths for caller to purge."""
+        gcs_paths: list[str] = []
+        event_ref = self._ref(event_id)
+
+        async for bundle in event_ref.collection("bundles").stream():
+            async for item in bundle.reference.collection("items").stream():
+                item_data = item.to_dict() or {}
+                for img in item_data.get("images") or []:
+                    if img.get("gcs_path"):
+                        gcs_paths.append(img["gcs_path"])
+                await item.reference.delete()
+            await bundle.reference.delete()
+
+        sale_doc = await event_ref.get()
+        if sale_doc.exists:
+            data = sale_doc.to_dict() or {}
+            if data.get("videoUrl"):
+                gcs_paths.append(data["videoUrl"])
+            cover = data.get("coverImage") or {}
+            if cover.get("gcs_path"):
+                gcs_paths.append(cover["gcs_path"])
+
+        await event_ref.delete()
+        return gcs_paths
+
+    async def set_video_url(self, event_id: str, gcs_uri: str) -> None:
+        await self._ref(event_id).update({
+            "videoUrl": gcs_uri,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        })

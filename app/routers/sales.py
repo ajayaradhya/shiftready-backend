@@ -17,6 +17,7 @@ from app.models.schemas import (
     PriceEstimationRequest,
     SaleInitRequest, SaleInitResponse, SalePublishRequest, SaleUpdate,
     SaleStatusResponse, StatusResponse,
+    VideoReplaceInitResponse, VideoReplaceConfirmRequest, VideoReplaceMode,
 )
 from app.services.permissions import assert_editable
 
@@ -734,3 +735,109 @@ async def reorder_item_images(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return {"status": "updated"}
+
+
+# --- SALE LIFECYCLE ---
+
+@router.post("/{event_id}/archive", response_model=StatusResponse)
+async def archive_sale_endpoint(
+    event_id: str,
+    firestore: FirestoreDep,
+    sale: dict = Depends(validate_sale_owner),
+):
+    """Soft-archive a sale (sets status=ARCHIVED). Blocked while processing."""
+    if sale.get("status") in [SaleStatus.PROCESSING, SaleStatus.PRICING_IN_PROGRESS]:
+        raise HTTPException(status_code=409, detail="Cannot archive while AI is processing.")
+    await firestore.archive_sale(event_id)
+    await notifier.notify_event(event_id, {"type": "SALE_ARCHIVED"})
+    return {"status": SaleStatus.ARCHIVED}
+
+
+@router.delete("/{event_id}", response_model=StatusResponse)
+async def delete_sale(
+    event_id: str,
+    firestore: FirestoreDep,
+    gcs: GCSDep,
+    bucket: BucketDep,
+    sale: dict = Depends(validate_sale_owner),
+):
+    """Hard-delete a sale (PENDING_UPLOAD or FAILED only). Purges GCS + Firestore."""
+    if sale.get("status") not in [SaleStatus.PENDING_UPLOAD, SaleStatus.FAILED]:
+        raise HTTPException(
+            status_code=409,
+            detail="Only pending_upload or failed sales can be permanently deleted. Use /archive for others.",
+        )
+    gcs_paths = await firestore.hard_delete_sale(event_id)
+    for path in gcs_paths:
+        blob_name = path.replace(f"gs://{bucket}/", "")
+        gcs.delete_blob(bucket, blob_name)
+    return {"status": "deleted"}
+
+
+@router.post("/{event_id}/republish", response_model=StatusResponse)
+async def republish_sale(
+    event_id: str,
+    firestore: FirestoreDep,
+    sale: dict = Depends(validate_sale_owner),
+):
+    """Re-publish a sale that was unpublished. Must be ready_for_review."""
+    if sale.get("status") not in [SaleStatus.READY_FOR_REVIEW]:
+        raise HTTPException(status_code=400, detail="Sale must be ready_for_review to republish.")
+    await firestore.transition_sale_status(event_id, SaleStatus.LIVE)
+    await notifier.notify_event(event_id, {"type": "SALE_REPUBLISHED"})
+    return {"status": SaleStatus.LIVE}
+
+
+# --- VIDEO MANAGEMENT ---
+
+@router.post("/{event_id}/video/replace-init", response_model=VideoReplaceInitResponse)
+async def video_replace_init(
+    event_id: str,
+    payload: SaleInitRequest,
+    gcs: GCSDep,
+    bucket: BucketDep,
+    sale: dict = Depends(validate_sale_owner),
+):
+    """Get a signed PUT URL to upload a replacement video."""
+    assert_editable(sale)
+    if sale.get("status") == SaleStatus.LIVE:
+        raise HTTPException(status_code=409, detail="Unpublish the sale before replacing the video.")
+    video_id = str(uuid.uuid4())
+    blob_name = f"{sale['sellerId']}/{video_id}_{payload.filename}"
+    gcs_uri = f"gs://{bucket}/{blob_name}"
+    upload_url = gcs.generate_upload_url(bucket, blob_name)
+    return VideoReplaceInitResponse(upload_url=upload_url, gcs_uri=gcs_uri, video_id=video_id)
+
+
+@router.post("/{event_id}/video/replace-confirm", response_model=StatusResponse)
+async def video_replace_confirm(
+    event_id: str,
+    payload: VideoReplaceConfirmRequest,
+    background: BackgroundTasks,
+    firestore: FirestoreDep,
+    gemini: GeminiDep,
+    sale: dict = Depends(validate_sale_owner),
+):
+    """
+    Confirm a replacement video upload.
+    mode=wipe: clears all bundles, replaces videoUrl, re-runs extraction pipeline.
+    mode=append: adds to existing inventory via append pipeline.
+    """
+    assert_editable(sale)
+    if sale.get("status") == SaleStatus.LIVE:
+        raise HTTPException(status_code=409, detail="Unpublish the sale before replacing the video.")
+
+    if payload.mode == VideoReplaceMode.WIPE:
+        summary = await firestore.get_full_event_summary(event_id)
+        for bundle in (summary or {}).get("bundles", []):
+            await firestore.delete_bundle(event_id, bundle["id"])
+        await firestore.set_video_url(event_id, payload.gcs_uri)
+        await firestore.transition_sale_status(event_id, SaleStatus.PROCESSING)
+        background.add_task(run_extraction_pipeline, event_id, payload.gcs_uri, firestore, gemini)
+        await notifier.notify_event(event_id, {"type": "VIDEO_REPLACED", "mode": "wipe"})
+        return {"status": SaleStatus.PROCESSING}
+    else:
+        await firestore.transition_sale_status(event_id, SaleStatus.PROCESSING)
+        background.add_task(run_append_extraction_pipeline, event_id, payload.gcs_uri, firestore, gemini)
+        await notifier.notify_event(event_id, {"type": "VIDEO_REPLACED", "mode": "append"})
+        return {"status": SaleStatus.PROCESSING}

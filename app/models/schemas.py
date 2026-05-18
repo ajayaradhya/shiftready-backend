@@ -212,6 +212,25 @@ class CoverFromItemRequest(BaseModel):
     image_id: str
 
 
+# --- Video Replace Schemas ---
+
+class VideoReplaceMode(str, Enum):
+    WIPE = "wipe"
+    APPEND = "append"
+
+
+class VideoReplaceInitResponse(BaseModel):
+    upload_url: str
+    gcs_uri: str
+    video_id: str
+
+
+class VideoReplaceConfirmRequest(BaseModel):
+    gcs_uri: str
+    mode: VideoReplaceMode = VideoReplaceMode.WIPE
+    video_id: str
+
+
 # --- Generic Responses ---
 
 class StatusResponse(BaseModel):

@@ -96,6 +96,15 @@ class FirestoreService:
     async def get_full_event_summary(self, event_id: str) -> dict | None:
         return await self.sales.get_full_event_summary(event_id)
 
+    async def archive_sale(self, event_id: str) -> None:
+        return await self.sales.archive_sale(event_id)
+
+    async def hard_delete_sale(self, event_id: str) -> list[str]:
+        return await self.sales.hard_delete_sale(event_id)
+
+    async def set_video_url(self, event_id: str, gcs_uri: str) -> None:
+        return await self.sales.set_video_url(event_id, gcs_uri)
+
     # --- bundle ---
     async def add_bundle(self, event_id: str, bundle_name: str, suggested_price: float = 0.0) -> str:
         return await self.bundles.add_bundle(event_id, bundle_name, suggested_price)
