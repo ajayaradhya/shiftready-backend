@@ -9,14 +9,15 @@ from google.cloud.firestore import ArrayUnion
 from app.domain.status import SaleStatus
 from app.models.schemas import (
     AppendInitResponse, AppendProcessRequest,
-    BundleCreateRequest, BundleCreateResponse,
+    BundleCreateRequest, BundleCreateResponse, BundleRenameRequest,
     CaptureInitResponse, CaptureFrameResponse, CaptureFinalizeRequest, CaptureFinalizeV2Request, CaptureFinalizeV2Response, ProcessFramesResponse,
-    ImageConfirmRequest, ImageUploadUrlItem, ImageUploadUrlsRequest, ImageUploadUrlsResponse,
-    ItemCreateRequest, ItemCreateResponse, ItemUpdate,
+    ImageConfirmRequest, ImageUploadUrlItem, ImageUploadUrlsRequest, ImageUploadUrlsResponse, ImageReorderRequest,
+    ItemCreateRequest, ItemCreateResponse, ItemUpdate, ItemMoveRequest,
     PriceEstimationRequest,
     SaleInitRequest, SaleInitResponse, SalePublishRequest,
     SaleStatusResponse, StatusResponse,
 )
+from app.services.permissions import assert_editable
 
 from app.core.deps import FirestoreDep, GCSDep, BucketDep, GeminiDep
 from app.services.pipelines import (
@@ -384,6 +385,20 @@ async def add_bundle(
     return {"bundle_id": bundle_id}
 
 
+@router.patch("/{event_id}/bundles/{bundle_id}", response_model=StatusResponse)
+async def rename_bundle(
+    event_id: str,
+    bundle_id: str,
+    payload: BundleRenameRequest,
+    firestore: FirestoreDep,
+    sale: dict = Depends(validate_sale_owner),
+):
+    assert_editable(sale)
+    await firestore.rename_bundle(event_id, bundle_id, payload.name)
+    await notifier.notify_event(event_id, {"type": "BUNDLE_RENAMED", "bundle_id": bundle_id, "name": payload.name})
+    return {"status": "updated"}
+
+
 @router.delete("/{event_id}/bundles/{bundle_id}", response_model=StatusResponse)
 async def remove_bundle(
     event_id: str,
@@ -432,6 +447,31 @@ async def update_item(
 
     if "actual_listing_price" in updates:
         await firestore.recalculate_bundle_total(event_id, bundle_id)
+    return {"status": "updated"}
+
+
+@router.patch("/{event_id}/bundles/{bundle_id}/items/{item_id}/move", response_model=StatusResponse)
+async def move_item(
+    event_id: str,
+    bundle_id: str,
+    item_id: str,
+    payload: ItemMoveRequest,
+    firestore: FirestoreDep,
+    sale: dict = Depends(validate_sale_owner),
+):
+    assert_editable(sale)
+    if payload.to_bundle_id == bundle_id:
+        return {"status": "updated"}
+    try:
+        await firestore.move_item(event_id, bundle_id, item_id, payload.to_bundle_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    await notifier.notify_event(event_id, {
+        "type": "ITEM_MOVED",
+        "item_id": item_id,
+        "from_bundle_id": bundle_id,
+        "to_bundle_id": payload.to_bundle_id,
+    })
     return {"status": "updated"}
 
 
@@ -568,4 +608,24 @@ async def set_item_image_cover(
         for img in images
     ]
     await firestore.update_item_data(event_id, bundle_id, item_id, {"images": new_images})
+    return {"status": "updated"}
+
+
+@router.patch(
+    "/{event_id}/bundles/{bundle_id}/items/{item_id}/images/order",
+    response_model=StatusResponse,
+)
+async def reorder_item_images(
+    event_id: str,
+    bundle_id: str,
+    item_id: str,
+    payload: ImageReorderRequest,
+    firestore: FirestoreDep,
+    sale: dict = Depends(validate_sale_owner),
+):
+    assert_editable(sale)
+    try:
+        await firestore.reorder_item_images(event_id, bundle_id, item_id, payload.image_ids)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     return {"status": "updated"}

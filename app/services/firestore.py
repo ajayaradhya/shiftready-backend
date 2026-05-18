@@ -117,6 +117,19 @@ class FirestoreService:
     ) -> dict | None:
         return await self.items.get_item_standalone(event_id, bundle_id, item_id)
 
+    async def move_item(
+        self, event_id: str, from_bundle_id: str, item_id: str, to_bundle_id: str
+    ) -> None:
+        return await self.items.move_item(event_id, from_bundle_id, item_id, to_bundle_id)
+
+    async def reorder_item_images(
+        self, event_id: str, bundle_id: str, item_id: str, image_ids: list[str]
+    ) -> None:
+        return await self.items.reorder_images(event_id, bundle_id, item_id, image_ids)
+
+    async def rename_bundle(self, event_id: str, bundle_id: str, name: str) -> None:
+        return await self.bundles.update_bundle_metadata(event_id, bundle_id, {"name": name})
+
     # --- marketplace ---
     async def list_live_sales(self) -> list[dict]:
         return await self.marketplace.list_live_sales()

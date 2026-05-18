@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import Enum
 
 from pydantic import BaseModel, Field
 
@@ -86,6 +87,10 @@ class BundleCreateResponse(BaseModel):
     bundle_id: str
 
 
+class BundleRenameRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=80)
+
+
 # --- Item Schemas ---
 
 class ItemCreateRequest(BaseModel):
@@ -109,6 +114,14 @@ class ItemCreateResponse(BaseModel):
     item_id: str
 
 
+class ItemCategory(str, Enum):
+    furniture = "furniture"
+    appliance = "appliance"
+    decor = "decor"
+    electronics = "electronics"
+    other = "other"
+
+
 class ItemUpdate(BaseModel):
     """Strict schema for PATCH operations to avoid overwriting unrelated fields."""
     name: str | None = None
@@ -121,6 +134,17 @@ class ItemUpdate(BaseModel):
     material: str | None = None
     is_fragile: bool | None = None
     disassembly_required: bool | None = None
+    description: str | None = Field(default=None, max_length=500)
+    category: ItemCategory | None = None
+    quantity: int | None = Field(default=None, ge=1)
+
+
+class ItemMoveRequest(BaseModel):
+    to_bundle_id: str
+
+
+class ImageReorderRequest(BaseModel):
+    image_ids: list[str]
 
 
 # --- Item Image Schemas ---
