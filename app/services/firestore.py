@@ -84,6 +84,15 @@ class FirestoreService:
     async def list_all_sales(self, user_id: str) -> list[dict]:
         return await self.sales.list_all_sales(user_id)
 
+    async def patch_sale(self, event_id: str, updates: dict, user_id: str) -> None:
+        return await self.sales.patch_sale(event_id, updates, user_id)
+
+    async def set_cover(self, event_id: str, cover_data: dict) -> None:
+        return await self.sales.set_cover(event_id, cover_data)
+
+    async def clear_cover(self, event_id: str) -> None:
+        return await self.sales.clear_cover(event_id)
+
     async def get_full_event_summary(self, event_id: str) -> dict | None:
         return await self.sales.get_full_event_summary(event_id)
 

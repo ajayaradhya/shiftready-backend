@@ -75,6 +75,34 @@ class SaleRepo:
             results.append(data)
         return results
 
+    async def patch_sale(self, event_id: str, updates: dict, user_id: str) -> None:
+        current = await self.get_sale_event(event_id)
+        before = {k: (current or {}).get(k) for k in updates}
+        history_entry = {
+            "fields": list(updates.keys()),
+            "before": before,
+            "after": updates,
+            "userId": user_id,
+            "ts": datetime.now(timezone.utc),
+        }
+        await self._ref(event_id).update({
+            **updates,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+            "editHistory": firestore.ArrayUnion([history_entry]),
+        })
+
+    async def set_cover(self, event_id: str, cover_data: dict) -> None:
+        await self._ref(event_id).update({
+            "coverImage": cover_data,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        })
+
+    async def clear_cover(self, event_id: str) -> None:
+        await self._ref(event_id).update({
+            "coverImage": firestore.DELETE_FIELD,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        })
+
     async def get_full_event_summary(self, event_id: str) -> dict | None:
         event_ref = self._ref(event_id)
         event_doc = await event_ref.get()

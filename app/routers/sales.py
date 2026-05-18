@@ -11,10 +11,11 @@ from app.models.schemas import (
     AppendInitResponse, AppendProcessRequest,
     BundleCreateRequest, BundleCreateResponse, BundleRenameRequest,
     CaptureInitResponse, CaptureFrameResponse, CaptureFinalizeRequest, CaptureFinalizeV2Request, CaptureFinalizeV2Response, ProcessFramesResponse,
+    CoverConfirmRequest, CoverFromItemRequest, CoverUploadUrlResponse,
     ImageConfirmRequest, ImageUploadUrlItem, ImageUploadUrlsRequest, ImageUploadUrlsResponse, ImageReorderRequest,
     ItemCreateRequest, ItemCreateResponse, ItemUpdate, ItemMoveRequest,
     PriceEstimationRequest,
-    SaleInitRequest, SaleInitResponse, SalePublishRequest,
+    SaleInitRequest, SaleInitResponse, SalePublishRequest, SaleUpdate,
     SaleStatusResponse, StatusResponse,
 )
 from app.services.permissions import assert_editable
@@ -223,6 +224,13 @@ async def get_sale_summary(
         stripped = gcs_uri.replace("gs://", "").split("/", 1)
         summary["videoUrl"] = gcs.generate_download_url(stripped[0], stripped[1])
 
+    cover = summary.get("coverImage")
+    if cover and isinstance(cover, dict):
+        cover_path = cover.get("gcs_path", "")
+        if cover_path.startswith("gs://"):
+            s = cover_path.replace("gs://", "").split("/", 1)
+            cover["url"] = gcs.generate_download_url(s[0], s[1])
+
     for bundle in summary.get("bundles", []):
         for item in bundle.get("items", []):
             if "images" in item and isinstance(item["images"], list):
@@ -332,6 +340,103 @@ async def unpublish_sale(
 
     await firestore.transition_sale_status(event_id, SaleStatus.READY_FOR_REVIEW)
     return {"status": SaleStatus.READY_FOR_REVIEW}
+
+# --- SALE METADATA PATCH ---
+
+@router.patch("/{event_id}", response_model=StatusResponse)
+async def patch_sale(
+    event_id: str,
+    payload: SaleUpdate,
+    firestore: FirestoreDep,
+    current_user: User = Depends(get_current_user),
+    sale: dict = Depends(validate_sale_owner),
+):
+    """
+    Update sale metadata (title, description, address, move-out date).
+    Status-gated: only editable in ready_for_review, live, partially_sold, failed.
+    Path: PATCH /api/v1/sales/{event_id}
+    """
+    assert_editable(sale)
+    updates = payload.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(status_code=422, detail="No valid fields provided")
+    field_map = {"move_out_date": "moveOutDate", "street_address": "streetAddress"}
+    mapped = {field_map.get(k, k): v for k, v in updates.items()}
+    await firestore.patch_sale(event_id, mapped, current_user.id)
+    await notifier.notify_event(event_id, {"type": "SALE_UPDATED", "updates": list(mapped.keys())})
+    return {"status": "updated"}
+
+
+# --- SALE COVER IMAGE ---
+
+@router.post("/{event_id}/cover/upload-url", response_model=CoverUploadUrlResponse)
+async def get_cover_upload_url(
+    event_id: str,
+    gcs: GCSDep,
+    bucket: BucketDep,
+    sale: dict = Depends(validate_sale_owner),
+):
+    """Get a signed PUT URL to upload a sale cover image."""
+    assert_editable(sale)
+    image_id = str(uuid.uuid4())
+    blob_name = f"sales/{event_id}/cover/{image_id}.jpg"
+    gcs_path = f"gs://{bucket}/{blob_name}"
+    upload_url = gcs.generate_image_upload_url(bucket, blob_name)
+    return CoverUploadUrlResponse(image_id=image_id, upload_url=upload_url, gcs_path=gcs_path)
+
+
+@router.post("/{event_id}/cover/confirm", response_model=StatusResponse)
+async def confirm_cover(
+    event_id: str,
+    payload: CoverConfirmRequest,
+    firestore: FirestoreDep,
+    sale: dict = Depends(validate_sale_owner),
+):
+    """Confirm a cover image that was PUT to GCS."""
+    assert_editable(sale)
+    cover_data = {"id": payload.image_id, "gcs_path": payload.gcs_path, "source": "user_upload"}
+    await firestore.set_cover(event_id, cover_data)
+    await notifier.notify_event(event_id, {"type": "COVER_UPDATED"})
+    return {"status": "updated"}
+
+
+@router.post("/{event_id}/cover/from-item", response_model=StatusResponse)
+async def cover_from_item(
+    event_id: str,
+    payload: CoverFromItemRequest,
+    firestore: FirestoreDep,
+    sale: dict = Depends(validate_sale_owner),
+):
+    """Promote an existing item image to the sale cover image."""
+    assert_editable(sale)
+    item = await firestore.get_item_standalone(event_id, payload.bundle_id, payload.item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    images: list[dict] = item.get("images", [])
+    target = next((img for img in images if img.get("id") == payload.image_id), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Image not found")
+    cover_data = {
+        "id": payload.image_id,
+        "gcs_path": target["gcs_path"],
+        "source": target.get("source", "user_upload"),
+    }
+    await firestore.set_cover(event_id, cover_data)
+    await notifier.notify_event(event_id, {"type": "COVER_UPDATED"})
+    return {"status": "updated"}
+
+
+@router.delete("/{event_id}/cover", response_model=StatusResponse)
+async def delete_cover(
+    event_id: str,
+    firestore: FirestoreDep,
+    sale: dict = Depends(validate_sale_owner),
+):
+    """Remove the sale cover image."""
+    assert_editable(sale)
+    await firestore.clear_cover(event_id)
+    return {"status": "deleted"}
+
 
 # --- APPEND VIDEO ---
 

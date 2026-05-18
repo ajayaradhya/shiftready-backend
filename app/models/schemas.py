@@ -177,6 +177,41 @@ class ImageConfirmRequest(BaseModel):
     images: list[ImageConfirmItem]
 
 
+# --- Sale Update / Cover Schemas ---
+
+class CoverImageData(BaseModel):
+    id: str
+    gcs_path: str
+    source: str = "user_upload"
+
+
+class SaleUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=80)
+    description: str | None = Field(default=None, max_length=1000)
+    move_out_date: str | None = None
+    street_address: str | None = None
+    suburb: str | None = None
+    pincode: str | None = None
+    state: str | None = None
+
+
+class CoverUploadUrlResponse(BaseModel):
+    image_id: str
+    upload_url: str
+    gcs_path: str
+
+
+class CoverConfirmRequest(BaseModel):
+    image_id: str
+    gcs_path: str
+
+
+class CoverFromItemRequest(BaseModel):
+    bundle_id: str
+    item_id: str
+    image_id: str
+
+
 # --- Generic Responses ---
 
 class StatusResponse(BaseModel):
