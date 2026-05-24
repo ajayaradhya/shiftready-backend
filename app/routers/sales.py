@@ -8,25 +8,20 @@ from google.cloud.firestore import ArrayUnion
 
 from app.domain.status import SaleStatus
 from app.models.schemas import (
-    AppendInitResponse, AppendProcessRequest,
     BundleCreateRequest, BundleCreateResponse, BundleRenameRequest,
-    CaptureInitResponse, CaptureFrameResponse, CaptureFinalizeRequest, CaptureFinalizeV2Request, CaptureFinalizeV2Response, ProcessFramesResponse,
+    CaptureInitResponse, CaptureFrameResponse, CaptureFinalizeV2Request, CaptureFinalizeV2Response,
     CoverConfirmRequest, CoverFromItemRequest, CoverUploadUrlResponse,
     ImageConfirmRequest, ImageUploadUrlItem, ImageUploadUrlsRequest, ImageUploadUrlsResponse, ImageReorderRequest,
     ItemCreateRequest, ItemCreateResponse, ItemUpdate, ItemMoveRequest,
     PriceEstimationRequest,
-    SaleInitRequest, SaleInitResponse, SalePublishRequest, SaleUpdate,
+    SalePublishRequest, SaleUpdate,
     SaleStatusResponse, StatusResponse,
-    VideoReplaceInitResponse, VideoReplaceConfirmRequest, VideoReplaceMode,
 )
 from app.services.permissions import assert_editable
 
 from app.core.deps import FirestoreDep, GCSDep, BucketDep, GeminiDep
 from app.services.pipelines import (
-    run_append_extraction_pipeline,
     run_capture_refinement_pipeline,
-    run_extraction_pipeline,
-    run_frames_extraction_pipeline,
     run_pricing_pipeline,
 )
 from app.services.notifier import notifier
@@ -35,34 +30,6 @@ from app.services.auth import get_current_user, validate_sale_owner, User, secur
 router = APIRouter(prefix="/sales")
 
 # --- CORE SALE ROUTES ---
-
-@router.post("/init", response_model=SaleInitResponse)
-async def init_sale(
-    payload: SaleInitRequest,
-    firestore: FirestoreDep,
-    gcs: GCSDep,
-    bucket: BucketDep,
-    current_user: User = Depends(get_current_user),
-    _ = Depends(security),  # Re-adds the "Lock" icon to Swagger UI
-):
-    """
-    Step 1: Create the Firestore record and get a GCS Signed URL for upload.
-    Path: POST /api/v1/sales/init
-    """
-    # Create GCS URI
-    gcs_uri = f"gs://{bucket}/{current_user.id}/{payload.filename}"
-
-    # Initialize in Firestore
-    event_id = await firestore.create_sale_event(current_user.id, gcs_uri)
-
-    # Generate Signed URL for frontend PUT request
-    upload_url = gcs.generate_upload_url(bucket, f"{current_user.id}/{payload.filename}")
-
-    return {
-        "event_id": event_id,
-        "upload_url": upload_url,
-        "gcs_uri": gcs_uri,
-    }
 
 @router.post("/init-capture", response_model=CaptureInitResponse)
 async def init_capture_sale(
@@ -74,39 +41,8 @@ async def init_capture_sale(
     Create a sale event for the live-capture (frames) flow. No video upload needed.
     Path: POST /api/v1/sales/init-capture
     """
-    event_id = await firestore.create_sale_event(current_user.id, "")
+    event_id = await firestore.create_sale_event(current_user.id)
     return {"event_id": event_id}
-
-
-@router.post("/{event_id}/process-frames", response_model=ProcessFramesResponse)
-async def process_frames(
-    event_id: str,
-    background_tasks: BackgroundTasks,
-    firestore: FirestoreDep,
-    gcs: GCSDep,
-    bucket: BucketDep,
-    gemini: GeminiDep,
-    frames: list[UploadFile] = File(...),
-    event: dict = Depends(validate_sale_owner),
-):
-    """
-    Accept confirmed capture frames (JPEG), upload to GCS, and run frames extraction.
-    Path: POST /api/v1/sales/{event_id}/process-frames
-    """
-    if not frames:
-        raise HTTPException(status_code=400, detail="At least one frame is required")
-    if len(frames) > 30:
-        raise HTTPException(status_code=400, detail="Maximum 30 frames per session")
-
-    gcs_uris: list[str] = []
-    for i, frame in enumerate(frames):
-        data = await frame.read()
-        blob_name = f"captures/{event_id}/frame_{i:03d}.jpg"
-        uri = gcs.upload_bytes(bucket, blob_name, data, content_type="image/jpeg")
-        gcs_uris.append(uri)
-
-    background_tasks.add_task(run_frames_extraction_pipeline, event_id, gcs_uris, firestore, gemini)
-    return {"event_id": event_id, "status": "processing_started"}
 
 
 @router.post("/{event_id}/capture/frame", response_model=CaptureFrameResponse)
@@ -137,26 +73,6 @@ async def capture_frame(
     )
 
 
-@router.post("/{event_id}/capture/finalize", response_model=StatusResponse)
-async def finalize_capture(
-    event_id: str,
-    payload: CaptureFinalizeRequest,
-    background_tasks: BackgroundTasks,
-    firestore: FirestoreDep,
-    gemini: GeminiDep,
-    event: dict = Depends(validate_sale_owner),
-):
-    """
-    Trigger full extraction on all GCS frame URIs accumulated during live capture.
-    Runs run_frames_extraction_pipeline in background (same as process-frames but GCS URIs not re-uploaded).
-    Path: POST /api/v1/sales/{event_id}/capture/finalize
-    """
-    if not payload.gcs_uris:
-        raise HTTPException(status_code=400, detail="At least one frame URI required")
-    background_tasks.add_task(run_frames_extraction_pipeline, event_id, payload.gcs_uris, firestore, gemini)
-    return {"status": "processing_started"}
-
-
 @router.post("/{event_id}/capture/finalize-v2", response_model=CaptureFinalizeV2Response)
 async def finalize_capture_v2(
     event_id: str,
@@ -176,21 +92,6 @@ async def finalize_capture_v2(
     background_tasks.add_task(run_capture_refinement_pipeline, event_id, payload.items, firestore, gemini)
     return CaptureFinalizeV2Response(event_id=event_id, status="processing_started", item_count=len(payload.items))
 
-
-@router.post("/{event_id}/process", response_model=StatusResponse)
-async def start_processing(
-    event_id: str,
-    background_tasks: BackgroundTasks,
-    firestore: FirestoreDep,
-    gemini: GeminiDep,
-    event: dict = Depends(validate_sale_owner),
-):
-    """
-    Step 2: Trigger Stage 1 AI (Vision Extraction).
-    Path: POST /api/v1/sales/{event_id}/process
-    """
-    background_tasks.add_task(run_extraction_pipeline, event_id, event["videoUrl"], firestore, gemini)
-    return {"status": "processing_started"}
 
 @router.get("/", response_model=list[SaleStatusResponse])
 async def list_sales(
@@ -219,11 +120,6 @@ async def get_sale_summary(
     summary = await firestore.get_full_event_summary(event_id)  # Validated via dependency
     if not summary:
         raise HTTPException(status_code=404, detail="Sale not found")
-
-    gcs_uri = summary.get("videoUrl")
-    if gcs_uri and gcs_uri.startswith("gs://"):
-        stripped = gcs_uri.replace("gs://", "").split("/", 1)
-        summary["videoUrl"] = gcs.generate_download_url(stripped[0], stripped[1])
 
     cover = summary.get("coverImage")
     if cover and isinstance(cover, dict):
@@ -437,45 +333,6 @@ async def delete_cover(
     assert_editable(sale)
     await firestore.clear_cover(event_id)
     return {"status": "deleted"}
-
-
-# --- APPEND VIDEO ---
-
-@router.post("/{event_id}/append-init", response_model=AppendInitResponse)
-async def append_init(
-    event_id: str,
-    payload: SaleInitRequest,
-    gcs: GCSDep,
-    bucket: BucketDep,
-    current_user: User = Depends(get_current_user),
-    event: dict = Depends(validate_sale_owner),
-):
-    """
-    Step A: Generate a signed upload URL for an additional video to append to an existing sale.
-    Path: POST /api/v1/sales/{event_id}/append-init
-    """
-    gcs_uri = f"gs://{bucket}/{current_user.id}/append/{event_id}/{payload.filename}"
-    upload_url = gcs.generate_upload_url(bucket, f"{current_user.id}/append/{event_id}/{payload.filename}")
-    return {"upload_url": upload_url, "gcs_uri": gcs_uri}
-
-
-@router.post("/{event_id}/append-process", response_model=StatusResponse)
-async def append_process(
-    event_id: str,
-    payload: AppendProcessRequest,
-    background_tasks: BackgroundTasks,
-    firestore: FirestoreDep,
-    gemini: GeminiDep,
-    event: dict = Depends(validate_sale_owner),
-):
-    """
-    Step B: Trigger append extraction — adds new bundles/items without clearing existing ones.
-    Path: POST /api/v1/sales/{event_id}/append-process
-    """
-    background_tasks.add_task(
-        run_append_extraction_pipeline, event_id, payload.gcs_uri, firestore, gemini
-    )
-    return {"status": "processing_started"}
 
 
 # --- INVENTORY CRUD ---
@@ -788,56 +645,3 @@ async def republish_sale(
     return {"status": SaleStatus.LIVE}
 
 
-# --- VIDEO MANAGEMENT ---
-
-@router.post("/{event_id}/video/replace-init", response_model=VideoReplaceInitResponse)
-async def video_replace_init(
-    event_id: str,
-    payload: SaleInitRequest,
-    gcs: GCSDep,
-    bucket: BucketDep,
-    sale: dict = Depends(validate_sale_owner),
-):
-    """Get a signed PUT URL to upload a replacement video."""
-    assert_editable(sale)
-    if sale.get("status") == SaleStatus.LIVE:
-        raise HTTPException(status_code=409, detail="Unpublish the sale before replacing the video.")
-    video_id = str(uuid.uuid4())
-    blob_name = f"{sale['sellerId']}/{video_id}_{payload.filename}"
-    gcs_uri = f"gs://{bucket}/{blob_name}"
-    upload_url = gcs.generate_upload_url(bucket, blob_name)
-    return VideoReplaceInitResponse(upload_url=upload_url, gcs_uri=gcs_uri, video_id=video_id)
-
-
-@router.post("/{event_id}/video/replace-confirm", response_model=StatusResponse)
-async def video_replace_confirm(
-    event_id: str,
-    payload: VideoReplaceConfirmRequest,
-    background: BackgroundTasks,
-    firestore: FirestoreDep,
-    gemini: GeminiDep,
-    sale: dict = Depends(validate_sale_owner),
-):
-    """
-    Confirm a replacement video upload.
-    mode=wipe: clears all bundles, replaces videoUrl, re-runs extraction pipeline.
-    mode=append: adds to existing inventory via append pipeline.
-    """
-    assert_editable(sale)
-    if sale.get("status") == SaleStatus.LIVE:
-        raise HTTPException(status_code=409, detail="Unpublish the sale before replacing the video.")
-
-    if payload.mode == VideoReplaceMode.WIPE:
-        summary = await firestore.get_full_event_summary(event_id)
-        for bundle in (summary or {}).get("bundles", []):
-            await firestore.delete_bundle(event_id, bundle["id"])
-        await firestore.set_video_url(event_id, payload.gcs_uri)
-        await firestore.transition_sale_status(event_id, SaleStatus.PROCESSING)
-        background.add_task(run_extraction_pipeline, event_id, payload.gcs_uri, firestore, gemini)
-        await notifier.notify_event(event_id, {"type": "VIDEO_REPLACED", "mode": "wipe"})
-        return {"status": SaleStatus.PROCESSING}
-    else:
-        await firestore.transition_sale_status(event_id, SaleStatus.PROCESSING)
-        background.add_task(run_append_extraction_pipeline, event_id, payload.gcs_uri, firestore, gemini)
-        await notifier.notify_event(event_id, {"type": "VIDEO_REPLACED", "mode": "append"})
-        return {"status": SaleStatus.PROCESSING}

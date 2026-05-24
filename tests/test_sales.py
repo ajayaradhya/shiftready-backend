@@ -3,15 +3,13 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 @pytest.mark.asyncio
-async def test_init_sale_success(async_client, authenticated_user, mock_services):
-    """Test full sale initialization flow with signed URL generation."""
-    payload = {"filename": "my_move.mp4"}
-    response = await async_client.post("/api/v1/sales/init", json=payload)
-    
+async def test_init_capture_success(async_client, authenticated_user, mock_services):
+    """Test capture sale initialization."""
+    response = await async_client.post("/api/v1/sales/init-capture")
+
     assert response.status_code == 200
     data = response.json()
     assert data["event_id"] == "mock_event_id"
-    assert "upload_url" in data
     mock_services["firestore"].create_sale_event.assert_called_once()
 
 @pytest.mark.asyncio

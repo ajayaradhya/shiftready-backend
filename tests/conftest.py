@@ -79,7 +79,6 @@ def sale_ownership_verified(mock_user):
         "id": "mock_event_id",
         "sellerId": mock_user.id,
         "status": "pending_upload",
-        "videoUrl": "gs://mock/path.mp4"
     }
     async def mock_validate():
         return mock_event

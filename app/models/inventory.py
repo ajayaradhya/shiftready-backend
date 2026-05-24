@@ -23,8 +23,6 @@ class InventoryItem(BaseModel):
 
     # Human-readable (e.g., "00:45")
     timestamp_label: str | None = Field(None, description="Format MM:SS")
-    # Machine-readable (e.g., 45.0)
-    video_timestamp: float | None = None
 
     # --- Physical Attributes (For Relocation) ---
     dimensions: str | None = None

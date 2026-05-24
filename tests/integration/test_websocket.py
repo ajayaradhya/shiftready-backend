@@ -11,9 +11,8 @@ Uses httpx-ws which handles the WebSocket upgrade over the ASGITransport.
 import pytest
 import asyncio
 from httpx_ws import aconnect_ws
-from app.models.inventory import InventoryItem, RoomBundle
 from app.domain.status import SaleStatus
-from .conftest import auth, init_sale, USER_A, USER_B
+from .conftest import auth, init_sale, add_bundle_with_item, USER_A, USER_B
 
 
 async def test_ws_sends_initial_status_on_connect(client):
@@ -39,21 +38,17 @@ async def test_ws_rejects_non_owner(client):
             await ws.receive_json()
 
 
-async def test_ws_receives_extraction_complete_notification(client, mock_external_services):
-    """After the pipeline completes, connected clients get a READY_FOR_REVIEW broadcast."""
-    mock_external_services["extract"].return_value = (
-        [RoomBundle(
-            bundle_name="Kitchen",
-            items=[InventoryItem(
-                name="Coffee Table", brand="IKEA", condition="Good",
-                confidence=0.9, predicted_year_of_purchase=2022,
-                predicted_original_price=200.0,
-            )],
-        )],
-        {"status": "success"},
-    )
+async def test_ws_receives_pricing_complete_notification(client, mock_external_services):
+    """After the pricing pipeline completes, connected clients get a READY_FOR_REVIEW broadcast."""
+    async def _pricing(items, move_out_date):
+        return (
+            [{"id": it["id"], "listing_price": 300.0, "reasoning": "Market rate"} for it in items],
+            {"status": "success"},
+        )
+    mock_external_services["price"].side_effect = _pricing
 
     event_id = await init_sale(client)
+    await add_bundle_with_item(client, event_id)
 
     async with aconnect_ws(
         f"http://test/api/v1/sales/{event_id}/ws?token={USER_A}", client
@@ -62,8 +57,12 @@ async def test_ws_receives_extraction_complete_notification(client, mock_externa
         initial = await ws.receive_json()
         assert initial["type"] == "STATUS_UPDATE"
 
-        # Trigger the extraction pipeline (runs inline with ASGITransport)
-        await client.post(f"/api/v1/sales/{event_id}/process", headers=auth(USER_A))
+        # Trigger pricing pipeline (runs inline with ASGITransport)
+        await client.post(
+            f"/api/v1/sales/{event_id}/estimate",
+            json={"move_out_date": "2026-06-01"},
+            headers=auth(USER_A),
+        )
 
         # The pipeline notifier broadcasts READY_FOR_REVIEW
         notification = await asyncio.wait_for(ws.receive_json(), timeout=5.0)

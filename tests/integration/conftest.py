@@ -176,11 +176,44 @@ def auth(user_id: str) -> dict:
 
 
 async def init_sale(client, user_id: str = USER_A, filename: str = "walk.mp4") -> str:
-    """Helper: initialise a sale and return the event_id."""
+    """Helper: initialise a capture sale and return the event_id."""
     r = await client.post(
-        "/api/v1/sales/init",
-        json={"filename": filename},
+        "/api/v1/sales/init-capture",
         headers=auth(user_id),
     )
     assert r.status_code == 200, r.text
     return r.json()["event_id"]
+
+
+async def add_bundle_with_item(
+    client,
+    event_id: str,
+    user_id: str = USER_A,
+    bundle_name: str = "Living Room",
+    item_name: str = "Velvet Sofa",
+    actual_listing_price: float = 500.0,
+) -> tuple[str, str]:
+    """Helper: add a bundle with one item, return (bundle_id, item_id)."""
+    r = await client.post(
+        f"/api/v1/sales/{event_id}/bundles",
+        json={"name": bundle_name},
+        headers=auth(user_id),
+    )
+    assert r.status_code == 200, r.text
+    bundle_id = r.json()["bundle_id"]
+
+    r = await client.post(
+        f"/api/v1/sales/{event_id}/bundles/{bundle_id}/items",
+        json={
+            "name": item_name,
+            "brand": "West Elm",
+            "condition": "Excellent",
+            "actual_listing_price": actual_listing_price,
+            "actual_original_price": 1200.0,
+            "actual_year_of_purchase": 2023,
+        },
+        headers=auth(user_id),
+    )
+    assert r.status_code == 200, r.text
+    item_id = r.json()["item_id"]
+    return bundle_id, item_id

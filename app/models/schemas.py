@@ -9,32 +9,8 @@ from app.domain.status import SaleStatus
 
 # --- Sale Initialization ---
 
-class SaleInitRequest(BaseModel):
-    filename: str
-
-
-class SaleInitResponse(BaseModel):
-    event_id: str
-    upload_url: str
-    gcs_uri: str
-
-
-class AppendInitResponse(BaseModel):
-    upload_url: str
-    gcs_uri: str
-
-
-class AppendProcessRequest(BaseModel):
-    gcs_uri: str
-
-
 class CaptureInitResponse(BaseModel):
     event_id: str
-
-
-class ProcessFramesResponse(BaseModel):
-    event_id: str
-    status: str
 
 
 class CaptureFrameResponse(BaseModel):
@@ -42,10 +18,6 @@ class CaptureFrameResponse(BaseModel):
     brand: str
     predicted_original_price: float
     gcs_uri: str
-
-
-class CaptureFinalizeRequest(BaseModel):
-    gcs_uris: list[str]
 
 
 class CapturedItemInput(BaseModel):
@@ -104,7 +76,6 @@ class ItemCreateRequest(BaseModel):
     condition: str = "Good"
     confidence: float = 1.0  # Manual items are 100% verified by default
     timestamp_label: str = "Manual Entry"
-    video_timestamp: int = 0
     dimensions: str | None = None
     material: str | None = None
     is_fragile: bool = False
@@ -211,25 +182,6 @@ class CoverFromItemRequest(BaseModel):
     bundle_id: str
     item_id: str
     image_id: str
-
-
-# --- Video Replace Schemas ---
-
-class VideoReplaceMode(str, Enum):
-    WIPE = "wipe"
-    APPEND = "append"
-
-
-class VideoReplaceInitResponse(BaseModel):
-    upload_url: str
-    gcs_uri: str
-    video_id: str
-
-
-class VideoReplaceConfirmRequest(BaseModel):
-    gcs_uri: str
-    mode: VideoReplaceMode = VideoReplaceMode.WIPE
-    video_id: str
 
 
 # --- Generic Responses ---

@@ -11,12 +11,11 @@ class SaleRepo:
     def _ref(self, event_id: str):
         return self.db.collection("saleEvents").document(event_id)
 
-    async def create_sale_event(self, user_id: str, video_url: str) -> str:
+    async def create_sale_event(self, user_id: str) -> str:
         doc_ref = self.db.collection("saleEvents").document()
         await doc_ref.set({
             "sellerId": user_id,
             "status": SaleStatus.PENDING_UPLOAD,
-            "videoUrl": video_url,
             "createdAt": firestore.SERVER_TIMESTAMP,
             "updatedAt": firestore.SERVER_TIMESTAMP,
             "statusHistory": [{"status": SaleStatus.PENDING_UPLOAD, "timestamp": datetime.now(timezone.utc)}],
@@ -146,8 +145,6 @@ class SaleRepo:
         sale_doc = await event_ref.get()
         if sale_doc.exists:
             data = sale_doc.to_dict() or {}
-            if data.get("videoUrl"):
-                gcs_paths.append(data["videoUrl"])
             cover = data.get("coverImage") or {}
             if cover.get("gcs_path"):
                 gcs_paths.append(cover["gcs_path"])
@@ -155,8 +152,3 @@ class SaleRepo:
         await event_ref.delete()
         return gcs_paths
 
-    async def set_video_url(self, event_id: str, gcs_uri: str) -> None:
-        await self._ref(event_id).update({
-            "videoUrl": gcs_uri,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        })

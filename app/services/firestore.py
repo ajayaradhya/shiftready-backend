@@ -78,8 +78,8 @@ class FirestoreService:
         return await self.users.get_saved(user_id)
 
     # --- sale ---
-    async def create_sale_event(self, user_id: str, video_url: str) -> str:
-        return await self.sales.create_sale_event(user_id, video_url)
+    async def create_sale_event(self, user_id: str) -> str:
+        return await self.sales.create_sale_event(user_id)
 
     async def get_sale_event(self, event_id: str) -> dict | None:
         return await self.sales.get_sale_event(event_id)
@@ -111,8 +111,6 @@ class FirestoreService:
     async def hard_delete_sale(self, event_id: str) -> list[str]:
         return await self.sales.hard_delete_sale(event_id)
 
-    async def set_video_url(self, event_id: str, gcs_uri: str) -> None:
-        return await self.sales.set_video_url(event_id, gcs_uri)
 
     # --- bundle ---
     async def add_bundle(self, event_id: str, bundle_name: str, suggested_price: float = 0.0) -> str:
