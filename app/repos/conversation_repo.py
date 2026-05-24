@@ -231,6 +231,253 @@ class ConversationRepo:
             total += pm.get(uid, {}).get("unreadCount", 0)
         return total
 
+    # ── offers ────────────────────────────────────────────────────────────────
+
+    def _offer_col(self, conv_id: str):
+        return self._conv_ref(conv_id).collection("offers")
+
+    async def get_offer(self, conv_id: str, offer_id: str) -> dict | None:
+        snap = await self._offer_col(conv_id).document(offer_id).get()
+        if not snap.exists:
+            return None
+        return {"id": snap.id, **snap.to_dict()}
+
+    async def send_offer(
+        self,
+        conv_id: str,
+        sender_uid: str,
+        amount: float,
+        parent_offer_id: str | None = None,
+        list_price: float | None = None,
+        pin_target: dict | None = None,
+    ) -> tuple[dict, dict]:
+        """Create offer doc + offer message. Returns (offer, message)."""
+        conv = await self.get_conversation(conv_id)
+        if not conv:
+            raise ValueError("Conversation not found")
+        if sender_uid not in conv.get("participants", []):
+            raise PermissionError("Not a participant")
+        if conv.get("status") == "blocked":
+            if conv.get("blockedBy") != sender_uid:
+                raise PermissionError("Message blocked")
+
+        now = datetime.now(timezone.utc)
+        offer_ref = self._offer_col(conv_id).document()
+        offer_data = {
+            "senderUid": sender_uid,
+            "amount": amount,
+            "currency": "AUD",
+            "listPrice": list_price,
+            "parentOfferId": parent_offer_id,
+            "status": "pending",
+            "pinTarget": pin_target,
+            "createdAt": now,
+            "updatedAt": now,
+        }
+        await offer_ref.set(offer_data)
+
+        # If counter, mark parent countered
+        if parent_offer_id:
+            await self._offer_col(conv_id).document(parent_offer_id).update({
+                "status": "countered",
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            })
+
+        saves_str = ""
+        if list_price and list_price > amount:
+            saves_str = f" (saves ${list_price - amount:.0f})"
+
+        msg_ref = self._msg_col(conv_id).document()
+        msg_data = {
+            "senderId": sender_uid,
+            "text": f"Offered ${amount:.0f}{saves_str}",
+            "createdAt": now,
+            "type": "offer",
+            "deletedAt": None,
+            "offerPayload": {
+                "offerId": offer_ref.id,
+                "amount": amount,
+                "currency": "AUD",
+                "listPrice": list_price,
+                "parentOfferId": parent_offer_id,
+                "status": "pending",
+                "pinTarget": pin_target,
+            },
+        }
+        await msg_ref.set(msg_data)
+
+        other = [p for p in conv["participants"] if p != sender_uid]
+        update: dict = {
+            "activeOfferId": offer_ref.id,
+            "dealStatus": "negotiating",
+            "lastMessage": msg_data["text"][:100],
+            "lastMessageAt": firestore.SERVER_TIMESTAMP,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        }
+        if other:
+            update[f"participantsMap.{other[0]}.unreadCount"] = firestore.Increment(1)
+        await self._conv_ref(conv_id).update(update)
+
+        offer_out = {"id": offer_ref.id, **offer_data}
+        msg_out = {"id": msg_ref.id, **msg_data}
+        return offer_out, msg_out
+
+    async def accept_offer(
+        self,
+        conv_id: str,
+        offer_id: str,
+        acceptor_uid: str,
+    ) -> tuple[dict, dict, dict]:
+        """Accept offer. Returns (offer, accepted_msg, deal_agreed_msg)."""
+        conv = await self.get_conversation(conv_id)
+        if not conv:
+            raise ValueError("Conversation not found")
+        if acceptor_uid not in conv.get("participants", []):
+            raise PermissionError("Not a participant")
+
+        offer = await self.get_offer(conv_id, offer_id)
+        if not offer:
+            raise ValueError("Offer not found")
+        if offer["status"] != "pending":
+            raise ValueError(f"Offer is {offer['status']}, cannot accept")
+        if offer["senderUid"] == acceptor_uid:
+            raise PermissionError("Cannot accept your own offer")
+
+        now = datetime.now(timezone.utc)
+        await self._offer_col(conv_id).document(offer_id).update({
+            "status": "accepted",
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        })
+
+        accepted_msg_ref = self._msg_col(conv_id).document()
+        accepted_payload = {
+            **{k: v for k, v in offer.get("offerPayload", {}).items()
+               if k != "status"},
+            "offerId": offer_id,
+            "amount": offer["amount"],
+            "currency": offer.get("currency", "AUD"),
+            "listPrice": offer.get("listPrice"),
+            "parentOfferId": offer.get("parentOfferId"),
+            "status": "accepted",
+            "pinTarget": offer.get("pinTarget"),
+        }
+        accepted_msg_data = {
+            "senderId": acceptor_uid,
+            "text": f"Accepted offer of ${offer['amount']:.0f}",
+            "createdAt": now,
+            "type": "offer_accepted",
+            "deletedAt": None,
+            "offerPayload": accepted_payload,
+        }
+        await accepted_msg_ref.set(accepted_msg_data)
+
+        deal_msg_ref = self._msg_col(conv_id).document()
+        deal_msg_data = {
+            "senderId": acceptor_uid,
+            "text": f"Deal agreed at ${offer['amount']:.0f}",
+            "createdAt": now,
+            "type": "system",
+            "subtype": "deal_agreed",
+            "deletedAt": None,
+        }
+        await deal_msg_ref.set(deal_msg_data)
+
+        other = [p for p in conv["participants"] if p != acceptor_uid]
+        update: dict = {
+            "activeOfferId": None,
+            "dealStatus": "agreed",
+            "lastMessage": accepted_msg_data["text"][:100],
+            "lastMessageAt": firestore.SERVER_TIMESTAMP,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        }
+        if other:
+            update[f"participantsMap.{other[0]}.unreadCount"] = firestore.Increment(1)
+        await self._conv_ref(conv_id).update(update)
+
+        return (
+            {"id": offer_id, **offer, "status": "accepted"},
+            {"id": accepted_msg_ref.id, **accepted_msg_data},
+            {"id": deal_msg_ref.id, **deal_msg_data},
+        )
+
+    async def counter_offer(
+        self,
+        conv_id: str,
+        offer_id: str,
+        counter_uid: str,
+        new_amount: float,
+    ) -> tuple[dict, dict]:
+        """Counter an offer. Returns (new_offer, message)."""
+        conv = await self.get_conversation(conv_id)
+        if not conv:
+            raise ValueError("Conversation not found")
+        if counter_uid not in conv.get("participants", []):
+            raise PermissionError("Not a participant")
+
+        offer = await self.get_offer(conv_id, offer_id)
+        if not offer:
+            raise ValueError("Offer not found")
+        if offer["status"] != "pending":
+            raise ValueError(f"Offer is {offer['status']}, cannot counter")
+        if offer["senderUid"] == counter_uid:
+            raise PermissionError("Cannot counter your own offer")
+
+        return await self.send_offer(
+            conv_id,
+            counter_uid,
+            new_amount,
+            parent_offer_id=offer_id,
+            list_price=offer.get("listPrice"),
+            pin_target=offer.get("pinTarget"),
+        )
+
+    async def withdraw_offer(
+        self,
+        conv_id: str,
+        offer_id: str,
+        withdrawer_uid: str,
+    ) -> dict:
+        """Withdraw own offer. Returns system message."""
+        conv = await self.get_conversation(conv_id)
+        if not conv:
+            raise ValueError("Conversation not found")
+        if withdrawer_uid not in conv.get("participants", []):
+            raise PermissionError("Not a participant")
+
+        offer = await self.get_offer(conv_id, offer_id)
+        if not offer:
+            raise ValueError("Offer not found")
+        if offer["status"] != "pending":
+            raise ValueError(f"Offer is {offer['status']}, cannot withdraw")
+        if offer["senderUid"] != withdrawer_uid:
+            raise PermissionError("Can only withdraw your own offer")
+
+        now = datetime.now(timezone.utc)
+        await self._offer_col(conv_id).document(offer_id).update({
+            "status": "withdrawn",
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        })
+
+        msg_ref = self._msg_col(conv_id).document()
+        msg_data = {
+            "senderId": withdrawer_uid,
+            "text": "Offer withdrawn",
+            "createdAt": now,
+            "type": "system",
+            "subtype": "offer_withdrawn",
+            "deletedAt": None,
+        }
+        await msg_ref.set(msg_data)
+
+        update: dict = {
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        }
+        if conv.get("activeOfferId") == offer_id:
+            update["activeOfferId"] = None
+        await self._conv_ref(conv_id).update(update)
+
+        return {"id": msg_ref.id, **msg_data}
+
     # ── rate limiting ─────────────────────────────────────────────────────────
 
     async def _check_rate_limit(self, conv_id: str, sender_uid: str) -> None:

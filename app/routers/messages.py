@@ -8,10 +8,11 @@ from app.models.schemas import (
     ConversationStartRequest,
     ConversationStartResponse,
     ConversationSummaryResponse,
+    CounterOfferRequest,
     MessagesListResponse,
     MessageResponse,
-    PinSnapshot,
     SendMessageRequest,
+    SendOfferRequest,
     SetPinRequest,
     UnreadCountResponse,
 )
@@ -247,6 +248,78 @@ async def patch_pin(
         msg = await messaging.set_pin(conv_id, current_user.id, pin_ref, snapshot, username)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
+    return MessageResponse(**msg)
+
+
+@router.post("/conversations/{conv_id}/offers", response_model=MessageResponse)
+async def send_offer(
+    conv_id: str,
+    body: SendOfferRequest,
+    current_user: CurrentUser,
+    messaging: MessagingDep,
+):
+    if body.amount <= 0:
+        raise HTTPException(status_code=422, detail="Offer amount must be positive")
+    try:
+        msg = await messaging.send_offer(
+            conv_id, current_user.id, body.amount,
+            parent_offer_id=body.parentOfferId,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return MessageResponse(**msg)
+
+
+@router.post("/conversations/{conv_id}/offers/{offer_id}/accept", response_model=MessageResponse)
+async def accept_offer(
+    conv_id: str,
+    offer_id: str,
+    current_user: CurrentUser,
+    messaging: MessagingDep,
+):
+    try:
+        msg = await messaging.accept_offer(conv_id, offer_id, current_user.id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return MessageResponse(**msg)
+
+
+@router.post("/conversations/{conv_id}/offers/{offer_id}/counter", response_model=MessageResponse)
+async def counter_offer(
+    conv_id: str,
+    offer_id: str,
+    body: CounterOfferRequest,
+    current_user: CurrentUser,
+    messaging: MessagingDep,
+):
+    if body.amount <= 0:
+        raise HTTPException(status_code=422, detail="Counter amount must be positive")
+    try:
+        msg = await messaging.counter_offer(conv_id, offer_id, current_user.id, body.amount)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return MessageResponse(**msg)
+
+
+@router.post("/conversations/{conv_id}/offers/{offer_id}/withdraw", response_model=MessageResponse)
+async def withdraw_offer(
+    conv_id: str,
+    offer_id: str,
+    current_user: CurrentUser,
+    messaging: MessagingDep,
+):
+    try:
+        msg = await messaging.withdraw_offer(conv_id, offer_id, current_user.id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     return MessageResponse(**msg)
 
 

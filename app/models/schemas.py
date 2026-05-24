@@ -315,6 +315,37 @@ class SetPinRequest(BaseModel):
     itemId: str | None = None
 
 
+class OfferPayload(BaseModel):
+    offerId: str
+    amount: float
+    currency: str = "AUD"
+    listPrice: float | None = None
+    parentOfferId: str | None = None
+    status: Literal["pending", "countered", "accepted", "withdrawn"]
+    pinTarget: PinRef | None = None
+
+
+class SendOfferRequest(BaseModel):
+    amount: float
+    parentOfferId: str | None = None
+
+
+class CounterOfferRequest(BaseModel):
+    amount: float
+
+
+class OfferResponse(BaseModel):
+    offerId: str
+    amount: float
+    currency: str = "AUD"
+    listPrice: float | None = None
+    parentOfferId: str | None = None
+    status: str
+    senderUid: str
+    createdAt: str | None = None
+    updatedAt: str | None = None
+
+
 class MessageResponse(BaseModel):
     id: str
     senderId: str
@@ -324,6 +355,7 @@ class MessageResponse(BaseModel):
     subtype: str | None = None
     context: MessageContext | None = None
     pinSnapshot: PinSnapshot | None = None
+    offerPayload: OfferPayload | None = None
 
 
 class ConversationStartRequest(BaseModel):
@@ -348,6 +380,8 @@ class ConversationSummaryResponse(BaseModel):
     updatedAt: str | None = None
     pin: PinRef | None = None
     pinSnapshot: PinSnapshot | None = None
+    activeOfferId: str | None = None
+    dealStatus: str = "none"
 
 
 class MessagesListResponse(BaseModel):

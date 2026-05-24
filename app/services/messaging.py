@@ -57,6 +57,8 @@ class MessagingService:
                 "updatedAt": _ts(c.get("updatedAt")),
                 "pin": c.get("pin"),
                 "pinSnapshot": c.get("pinSnapshot"),
+                "activeOfferId": c.get("activeOfferId"),
+                "dealStatus": c.get("dealStatus", "none"),
             })
         return result
 
@@ -126,6 +128,101 @@ class MessagingService:
     async def get_unread_count(self, uid: str) -> int:
         return await self.convs.get_total_unread(uid)
 
+    # ── offers ────────────────────────────────────────────────────────────────
+
+    async def send_offer(
+        self,
+        conv_id: str,
+        sender_uid: str,
+        amount: float,
+        parent_offer_id: str | None = None,
+        list_price: float | None = None,
+    ) -> dict:
+        conv = await self.convs.get_conversation(conv_id)
+        if not conv:
+            raise ValueError("Conversation not found")
+        pin = conv.get("pin")
+        offer, msg = await self.convs.send_offer(
+            conv_id, sender_uid, amount,
+            parent_offer_id=parent_offer_id,
+            list_price=list_price,
+            pin_target=pin,
+        )
+        other_uid = next((p for p in conv.get("participants", []) if p != sender_uid), None)
+        if other_uid:
+            await self.notifier.notify_user(other_uid, {
+                "type": "message.new",
+                "conversationId": conv_id,
+                "message": _serialize_msg(msg),
+            })
+        return _serialize_msg(msg)
+
+    async def accept_offer(
+        self,
+        conv_id: str,
+        offer_id: str,
+        acceptor_uid: str,
+    ) -> dict:
+        conv = await self.convs.get_conversation(conv_id)
+        if not conv:
+            raise ValueError("Conversation not found")
+        _offer, accepted_msg, deal_msg = await self.convs.accept_offer(conv_id, offer_id, acceptor_uid)
+        for uid in conv.get("participants", []):
+            await self.notifier.notify_user(uid, {
+                "type": "conversation.deal_agreed",
+                "conversationId": conv_id,
+                "amount": _offer.get("amount"),
+                "message": _serialize_msg(accepted_msg),
+                "dealMessage": _serialize_msg(deal_msg),
+            })
+        return _serialize_msg(accepted_msg)
+
+    async def counter_offer(
+        self,
+        conv_id: str,
+        offer_id: str,
+        counter_uid: str,
+        new_amount: float,
+    ) -> dict:
+        conv = await self.convs.get_conversation(conv_id)
+        if not conv:
+            raise ValueError("Conversation not found")
+        _offer, msg = await self.convs.counter_offer(conv_id, offer_id, counter_uid, new_amount)
+        other_uid = next((p for p in conv.get("participants", []) if p != counter_uid), None)
+        if other_uid:
+            await self.notifier.notify_user(other_uid, {
+                "type": "message.new",
+                "conversationId": conv_id,
+                "message": _serialize_msg(msg),
+            })
+        for uid in conv.get("participants", []):
+            await self.notifier.notify_user(uid, {
+                "type": "offer.updated",
+                "conversationId": conv_id,
+                "offerId": offer_id,
+                "status": "countered",
+            })
+        return _serialize_msg(msg)
+
+    async def withdraw_offer(
+        self,
+        conv_id: str,
+        offer_id: str,
+        withdrawer_uid: str,
+    ) -> dict:
+        msg = await self.convs.withdraw_offer(conv_id, offer_id, withdrawer_uid)
+        conv = await self.convs.get_conversation(conv_id)
+        if conv:
+            for uid in conv.get("participants", []):
+                await self.notifier.notify_user(uid, {
+                    "type": "offer.updated",
+                    "conversationId": conv_id,
+                    "offerId": offer_id,
+                    "status": "withdrawn",
+                    "message": _serialize_msg(msg),
+                })
+        return _serialize_msg(msg)
+
 
 def _ts(val: Any) -> str | None:
     if val is None:
@@ -148,4 +245,5 @@ def _serialize_msg(m: dict) -> dict:
         "subtype": m.get("subtype"),
         "context": m.get("context"),
         "pinSnapshot": m.get("pinSnapshot"),
+        "offerPayload": m.get("offerPayload"),
     }
