@@ -478,6 +478,48 @@ class ConversationRepo:
 
         return {"id": msg_ref.id, **msg_data}
 
+    # ── phone reveal ──────────────────────────────────────────────────────────
+
+    async def share_phone(self, conv_id: str, uid: str) -> None:
+        """Opt this user into phone sharing for this conversation thread."""
+        conv = await self.get_conversation(conv_id)
+        if not conv:
+            raise ValueError("Conversation not found")
+        if uid not in conv.get("participants", []):
+            raise PermissionError("Not a participant")
+        await self._conv_ref(conv_id).update({
+            f"phoneSharedBy.{uid}": True,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        })
+
+    async def get_phone_reveal(
+        self,
+        conv_id: str,
+        requester_uid: str,
+        user_repo,
+    ) -> str:
+        """
+        Return counterparty's phoneE164.
+        Raises PermissionError if gates not met.
+        """
+        conv = await self.get_conversation(conv_id)
+        if not conv or requester_uid not in conv.get("participants", []):
+            raise PermissionError("Not a participant")
+        if conv.get("dealStatus") != "agreed":
+            raise PermissionError("No agreed deal on this conversation")
+        other_uid = next(
+            (p for p in conv.get("participants", []) if p != requester_uid), None
+        )
+        if not other_uid:
+            raise PermissionError("No counterparty found")
+        shared_by = conv.get("phoneSharedBy", {})
+        if not shared_by.get(other_uid):
+            raise PermissionError("Counterparty has not shared their phone number")
+        phone = await user_repo.get_phone(other_uid)
+        if not phone:
+            raise PermissionError("Counterparty has no phone number on file")
+        return phone
+
     # ── rate limiting ─────────────────────────────────────────────────────────
 
     async def _check_rate_limit(self, conv_id: str, sender_uid: str) -> None:

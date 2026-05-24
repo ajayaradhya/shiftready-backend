@@ -11,9 +11,11 @@ from app.models.schemas import (
     CounterOfferRequest,
     MessagesListResponse,
     MessageResponse,
+    PhoneRevealResponse,
     SendMessageRequest,
     SendOfferRequest,
     SetPinRequest,
+    StatusResponse,
     UnreadCountResponse,
 )
 from app.core.deps import GCSDep
@@ -321,6 +323,35 @@ async def withdraw_offer(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return MessageResponse(**msg)
+
+
+@router.post("/conversations/{conv_id}/phone/share", response_model=StatusResponse)
+async def share_phone(
+    conv_id: str,
+    current_user: CurrentUser,
+    firestore: FirestoreDep,
+):
+    try:
+        await firestore.share_phone(conv_id, current_user.id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return StatusResponse(status="shared")
+
+
+@router.get("/conversations/{conv_id}/phone", response_model=PhoneRevealResponse)
+async def get_phone(
+    conv_id: str,
+    current_user: CurrentUser,
+    firestore: FirestoreDep,
+):
+    try:
+        phone = await firestore.get_phone_reveal(conv_id, current_user.id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    logger.info("phone_reveal conv=%s requester=%s", conv_id, current_user.id)
+    return PhoneRevealResponse(phoneE164=phone)
 
 
 @router.websocket("/ws")

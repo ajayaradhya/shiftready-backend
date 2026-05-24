@@ -47,6 +47,15 @@ class FirestoreService:
     async def is_username_available(self, username: str, requesting_uid: str | None = None) -> bool:
         return await self.users.is_username_available(username, requesting_uid)
 
+    async def update_phone(self, user_id: str, phone_e164: str, share_opt_in: bool) -> None:
+        return await self.users.update_phone(user_id, phone_e164, share_opt_in)
+
+    async def share_phone(self, conv_id: str, uid: str) -> None:
+        return await self.conversations.share_phone(conv_id, uid)
+
+    async def get_phone_reveal(self, conv_id: str, requester_uid: str) -> str:
+        return await self.conversations.get_phone_reveal(conv_id, requester_uid, self.users)
+
     async def save_sale(self, user_id: str, event_id: str, metadata: dict) -> None:
         return await self.users.save_sale(user_id, event_id, metadata)
 

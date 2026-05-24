@@ -46,6 +46,8 @@ class MessagingService:
                 other_user = await user_repo.get_user(other_uid)
                 other_username = other_user.get("username") if other_user else None
             pm = c.get("participantsMap", {})
+            shared_by = c.get("phoneSharedBy", {})
+            deal_agreed = c.get("dealStatus") == "agreed"
             result.append({
                 "id": c["id"],
                 "otherUserId": other_uid,
@@ -59,6 +61,8 @@ class MessagingService:
                 "pinSnapshot": c.get("pinSnapshot"),
                 "activeOfferId": c.get("activeOfferId"),
                 "dealStatus": c.get("dealStatus", "none"),
+                "phoneSharedByMe": bool(shared_by.get(uid)),
+                "phoneRevealAvailable": deal_agreed and bool(shared_by.get(other_uid)),
             })
         return result
 

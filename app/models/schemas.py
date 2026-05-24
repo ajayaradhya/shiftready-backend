@@ -369,6 +369,15 @@ class ConversationStartResponse(BaseModel):
     created: bool
 
 
+class PhoneUpdateRequest(BaseModel):
+    phoneE164: str
+    shareOptIn: bool = True
+
+
+class PhoneRevealResponse(BaseModel):
+    phoneE164: str
+
+
 class ConversationSummaryResponse(BaseModel):
     id: str
     otherUserId: str | None = None
@@ -382,6 +391,8 @@ class ConversationSummaryResponse(BaseModel):
     pinSnapshot: PinSnapshot | None = None
     activeOfferId: str | None = None
     dealStatus: str = "none"
+    phoneSharedByMe: bool = False
+    phoneRevealAvailable: bool = False
 
 
 class MessagesListResponse(BaseModel):

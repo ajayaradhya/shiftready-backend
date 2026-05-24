@@ -126,6 +126,21 @@ class UserRepo:
             return True
         return False
 
+    # --- phone ---
+
+    async def update_phone(self, user_id: str, phone_e164: str, share_opt_in: bool) -> None:
+        await self.db.collection("users").document(user_id).update({
+            "phoneE164": phone_e164,
+            "phoneShareOptIn": share_opt_in,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        })
+
+    async def get_phone(self, user_id: str) -> str | None:
+        snap = await self.db.collection("users").document(user_id).get()
+        if not snap.exists:
+            return None
+        return snap.get("phoneE164")
+
     # --- saves ---
 
     async def save_sale(self, user_id: str, event_id: str, metadata: dict) -> None:

@@ -1,17 +1,22 @@
+import re
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.deps import FirestoreDep, GCSDep
 from app.models.schemas import (
+    PhoneUpdateRequest,
     PublicUserResponse,
     SavedListResponse,
+    StatusResponse,
     UserProfileResponse,
     UsernameAvailableResponse,
     UsernameUpdateRequest,
 )
 from app.services.auth import User, get_current_user
 from app.utils.username import is_valid_username
+
+_E164_RE = re.compile(r"^\+[1-9]\d{9,14}$")
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -79,6 +84,21 @@ async def get_public_user(username: str, firestore: FirestoreDep):
         username=user_doc.get("username", username),
         joinedAt=user_doc.get("createdAt"),
     )
+
+
+@router.patch("/me/phone", response_model=StatusResponse)
+async def update_phone(
+    body: PhoneUpdateRequest,
+    current_user: CurrentUser,
+    firestore: FirestoreDep,
+):
+    if not _E164_RE.match(body.phoneE164):
+        raise HTTPException(
+            status_code=422,
+            detail="Phone must be E.164 format (e.g. +61412345678)",
+        )
+    await firestore.update_phone(current_user.id, body.phoneE164, body.shareOptIn)
+    return StatusResponse(status="updated")
 
 
 @router.get("/me/saved", response_model=SavedListResponse)
