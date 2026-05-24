@@ -91,6 +91,7 @@ async def send_message(
     body: SendMessageRequest,
     current_user: CurrentUser,
     messaging: MessagingDep,
+    firestore: FirestoreDep,
 ):
     ctx = body.context.model_dump() if body.context else None
     try:
@@ -99,6 +100,7 @@ async def send_message(
         raise HTTPException(status_code=403, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    await firestore.users.update_last_seen(current_user.id)
     return MessageResponse(**msg)
 
 
@@ -364,8 +366,11 @@ async def user_ws(websocket: WebSocket, firestore: FirestoreDep, token: str = Qu
         return
 
     await notifier.connect_user(user.id, websocket)
+    await firestore.users.update_last_seen(user.id)
     try:
         while True:
-            await websocket.receive_text()
+            data = await websocket.receive_text()
+            if data == "ping":
+                await firestore.users.update_last_seen(user.id)
     except WebSocketDisconnect:
         notifier.disconnect_user(user.id, websocket)

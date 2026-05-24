@@ -393,6 +393,8 @@ class ConversationSummaryResponse(BaseModel):
     dealStatus: str = "none"
     phoneSharedByMe: bool = False
     phoneRevealAvailable: bool = False
+    otherLastSeenAt: str | None = None
+    otherVerified: bool = False
 
 
 class MessagesListResponse(BaseModel):

@@ -42,9 +42,14 @@ class MessagingService:
         for c in convs:
             other_uid = next((p for p in c.get("participants", []) if p != uid), None)
             other_username = None
+            other_last_seen_at = None
+            other_verified = False
             if other_uid:
                 other_user = await user_repo.get_user(other_uid)
-                other_username = other_user.get("username") if other_user else None
+                if other_user:
+                    other_username = other_user.get("username")
+                    other_last_seen_at = _ts(other_user.get("lastSeenAt"))
+                    other_verified = bool(other_user.get("verified", False))
             pm = c.get("participantsMap", {})
             shared_by = c.get("phoneSharedBy", {})
             deal_agreed = c.get("dealStatus") == "agreed"
@@ -63,6 +68,8 @@ class MessagingService:
                 "dealStatus": c.get("dealStatus", "none"),
                 "phoneSharedByMe": bool(shared_by.get(uid)),
                 "phoneRevealAvailable": deal_agreed and bool(shared_by.get(other_uid)),
+                "otherLastSeenAt": other_last_seen_at,
+                "otherVerified": other_verified,
             })
         return result
 

@@ -128,6 +128,14 @@ class UserRepo:
 
     # --- phone ---
 
+    async def update_last_seen(self, user_id: str) -> None:
+        try:
+            await self.db.collection("users").document(user_id).update({
+                "lastSeenAt": firestore.SERVER_TIMESTAMP,
+            })
+        except Exception:
+            pass  # non-fatal
+
     async def update_phone(self, user_id: str, phone_e164: str, share_opt_in: bool) -> None:
         await self.db.collection("users").document(user_id).update({
             "phoneE164": phone_e164,
