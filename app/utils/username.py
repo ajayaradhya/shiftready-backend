@@ -17,14 +17,14 @@ _NOUNS = [
     "hunter", "roamer", "glider", "drifter",
 ]
 
-USERNAME_RE = re.compile(r"^[a-z0-9_]{3,20}$")
+USERNAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9]{3,19}$")
 
 
 def generate_username() -> str:
-    adj = random.choice(_ADJECTIVES)
-    noun = random.choice(_NOUNS)
+    adj = random.choice(_ADJECTIVES).capitalize()
+    noun = random.choice(_NOUNS).capitalize()
     num = random.randint(100, 999)
-    return f"{adj}_{noun}{num}"
+    return f"{adj}{noun}{num}"
 
 
 def make_conversation_id(uid_a: str, uid_b: str) -> str:
