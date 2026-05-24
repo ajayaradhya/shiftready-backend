@@ -87,6 +87,59 @@ class ConversationRepo:
             "updatedAt": firestore.SERVER_TIMESTAMP,
         })
 
+    async def set_pin(
+        self,
+        conv_id: str,
+        pin_ref: dict,
+        snapshot: dict,
+        actor_uid: str,
+        actor_username: str | None = None,
+    ) -> dict:
+        await self._conv_ref(conv_id).update({
+            "pin": pin_ref,
+            "pinSnapshot": snapshot,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        })
+        msg_ref = self._msg_col(conv_id).document()
+        now = datetime.now(timezone.utc)
+        target_name = snapshot.get("name") or pin_ref.get("kind", "item")
+        msg_data = {
+            "senderId": actor_uid,
+            "text": f"{actor_username or actor_uid} pinned {target_name}",
+            "createdAt": now,
+            "type": "system",
+            "subtype": "pin_changed",
+            "pinRef": pin_ref,
+            "pinSnapshot": snapshot,
+            "deletedAt": None,
+        }
+        await msg_ref.set(msg_data)
+        return {"id": msg_ref.id, **msg_data}
+
+    async def clear_pin(
+        self,
+        conv_id: str,
+        actor_uid: str,
+        actor_username: str | None = None,
+    ) -> dict:
+        await self._conv_ref(conv_id).update({
+            "pin": None,
+            "pinSnapshot": None,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        })
+        msg_ref = self._msg_col(conv_id).document()
+        now = datetime.now(timezone.utc)
+        msg_data = {
+            "senderId": actor_uid,
+            "text": f"{actor_username or actor_uid} removed the pinned item",
+            "createdAt": now,
+            "type": "system",
+            "subtype": "pin_cleared",
+            "deletedAt": None,
+        }
+        await msg_ref.set(msg_data)
+        return {"id": msg_ref.id, **msg_data}
+
     async def mark_read(self, conv_id: str, uid: str) -> None:
         await self._conv_ref(conv_id).update({
             f"participantsMap.{uid}.lastReadAt": firestore.SERVER_TIMESTAMP,

@@ -10,9 +10,12 @@ from app.models.schemas import (
     ConversationSummaryResponse,
     MessagesListResponse,
     MessageResponse,
+    PinSnapshot,
     SendMessageRequest,
+    SetPinRequest,
     UnreadCountResponse,
 )
+from app.core.deps import GCSDep
 from app.services.auth import User, get_current_user
 from app.services.notifier import notifier
 
@@ -118,6 +121,133 @@ async def unblock_conversation(conv_id: str, current_user: CurrentUser, messagin
     except (PermissionError, ValueError) as exc:
         raise HTTPException(status_code=403, detail=str(exc))
     return {"status": "active"}
+
+
+@router.patch("/conversations/{conv_id}/pin", response_model=MessageResponse)
+async def patch_pin(
+    conv_id: str,
+    body: SetPinRequest,
+    current_user: CurrentUser,
+    firestore: FirestoreDep,
+    messaging: MessagingDep,
+    gcs: GCSDep,
+):
+    # Validate participant
+    conv = await firestore.conversations.get_conversation(conv_id)
+    if not conv or current_user.id not in conv.get("participants", []):
+        raise HTTPException(status_code=403, detail="Not a participant")
+
+    # Clear pin
+    if body.kind is None:
+        user = await firestore.get_user(current_user.id)
+        username = user.get("username") if user else None
+        try:
+            msg = await messaging.clear_pin(conv_id, current_user.id, username)
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc))
+        return MessageResponse(**msg)
+
+    # Validate required fields
+    if not body.saleEventId:
+        raise HTTPException(status_code=422, detail="saleEventId required")
+    if body.kind == "item" and (not body.bundleId or not body.itemId):
+        raise HTTPException(status_code=422, detail="bundleId and itemId required for kind=item")
+    if body.kind == "bundle" and not body.bundleId:
+        raise HTTPException(status_code=422, detail="bundleId required for kind=bundle")
+
+    # Resolve snapshot + cross-seller check
+    sale = await firestore.sales.get_sale_event(body.saleEventId)
+    if not sale:
+        raise HTTPException(status_code=404, detail="Sale not found")
+    sale_seller = sale.get("sellerId") or sale.get("userId")
+    if sale_seller not in conv.get("participants", []):
+        raise HTTPException(status_code=403, detail="Sale seller is not a conversation participant")
+
+    def _gcs_url(gcs_path: str | None) -> str | None:
+        if not gcs_path or not gcs_path.startswith("gs://"):
+            return None
+        try:
+            parts = gcs_path.replace("gs://", "").split("/", 1)
+            return gcs.generate_download_url(parts[0], parts[1])
+        except Exception:
+            return None
+
+    snapshot: dict = {}
+    if body.kind == "item":
+        item = await firestore.get_item_standalone(body.saleEventId, body.bundleId, body.itemId)
+        if not item:
+            raise HTTPException(status_code=404, detail="Item not found")
+        images = item.get("images", [])
+        cover = next((img for img in images if img.get("is_cover")), images[0] if images else None)
+        snapshot = {
+            "name": item.get("name"),
+            "imageUrl": _gcs_url(cover.get("gcs_path") if cover else None),
+            "price": item.get("actual_listing_price") or item.get("predicted_listing_price"),
+            "rrp": item.get("original_price"),
+            "condition": item.get("condition"),
+            "itemCount": None,
+            "suburb": sale.get("suburb"),
+        }
+    elif body.kind == "bundle":
+        bundle_ref = firestore.db.collection("saleEvents").document(body.saleEventId).collection("bundles").document(body.bundleId)
+        bundle_doc = await bundle_ref.get()
+        if not bundle_doc.exists:
+            raise HTTPException(status_code=404, detail="Bundle not found")
+        bundle_data = bundle_doc.to_dict()
+        item_count = 0
+        cover_gcs = None
+        async for item_snap in bundle_ref.collection("items").stream():
+            item_count += 1
+            if cover_gcs is None:
+                idata = item_snap.to_dict()
+                imgs = idata.get("images", [])
+                cover_img = next((img for img in imgs if img.get("is_cover")), imgs[0] if imgs else None)
+                if cover_img:
+                    cover_gcs = cover_img.get("gcs_path")
+        snapshot = {
+            "name": bundle_data.get("name"),
+            "imageUrl": _gcs_url(cover_gcs),
+            "price": bundle_data.get("suggested_price"),
+            "rrp": None,
+            "condition": None,
+            "itemCount": item_count,
+            "suburb": sale.get("suburb"),
+        }
+    else:  # kind == "sale"
+        sale_cover = sale.get("coverImage") or {}
+        item_count = 0
+        total_price = 0.0
+        event_ref = firestore.db.collection("saleEvents").document(body.saleEventId)
+        async for b in event_ref.collection("bundles").stream():
+            async for i in b.reference.collection("items").stream():
+                item_count += 1
+                idata = i.to_dict()
+                total_price += idata.get("actual_listing_price") or idata.get("predicted_listing_price") or 0
+        snapshot = {
+            "name": sale.get("title") or (f"{sale.get('suburb')} Moving Sale" if sale.get("suburb") else "Moving Sale"),
+            "imageUrl": _gcs_url(sale_cover.get("gcs_path")),
+            "price": total_price if total_price > 0 else None,
+            "rrp": None,
+            "condition": None,
+            "itemCount": item_count,
+            "suburb": sale.get("suburb"),
+        }
+
+    pin_ref = {
+        "kind": body.kind,
+        "saleEventId": body.saleEventId,
+        "bundleId": body.bundleId,
+        "itemId": body.itemId,
+    }
+
+    user = await firestore.get_user(current_user.id)
+    username = user.get("username") if user else None
+
+    try:
+        msg = await messaging.set_pin(conv_id, current_user.id, pin_ref, snapshot, username)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    return MessageResponse(**msg)
 
 
 @router.websocket("/ws")

@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -290,13 +291,32 @@ class SendMessageRequest(BaseModel):
     context: MessageContext | None = None
 
 
+class PinSnapshot(BaseModel):
+    name: str | None = None
+    imageUrl: str | None = None
+    price: float | None = None
+    rrp: float | None = None
+    condition: str | None = None
+    itemCount: int | None = None
+    suburb: str | None = None
+
+
+class SetPinRequest(BaseModel):
+    kind: Literal["item", "bundle", "sale"] | None = None
+    saleEventId: str | None = None
+    bundleId: str | None = None
+    itemId: str | None = None
+
+
 class MessageResponse(BaseModel):
     id: str
     senderId: str
     text: str
     createdAt: str | None = None
     type: str = "text"
+    subtype: str | None = None
     context: MessageContext | None = None
+    pinSnapshot: PinSnapshot | None = None
 
 
 class ConversationStartRequest(BaseModel):
@@ -319,6 +339,7 @@ class ConversationSummaryResponse(BaseModel):
     unreadCount: int = 0
     status: str = "active"
     updatedAt: str | None = None
+    pinSnapshot: PinSnapshot | None = None
 
 
 class MessagesListResponse(BaseModel):

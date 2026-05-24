@@ -55,6 +55,7 @@ class MessagingService:
                 "unreadCount": pm.get(uid, {}).get("unreadCount", 0),
                 "status": c.get("status", "active"),
                 "updatedAt": _ts(c.get("updatedAt")),
+                "pinSnapshot": c.get("pinSnapshot"),
             })
         return result
 
@@ -79,6 +80,48 @@ class MessagingService:
     async def unblock(self, conv_id: str, uid: str) -> None:
         await self.convs.unblock_conversation(conv_id, uid)
 
+    async def set_pin(
+        self,
+        conv_id: str,
+        uid: str,
+        pin_ref: dict,
+        snapshot: dict,
+        username: str | None = None,
+    ) -> dict:
+        conv = await self.convs.get_conversation(conv_id)
+        if not conv or uid not in conv.get("participants", []):
+            raise PermissionError("Not a participant")
+        msg = await self.convs.set_pin(conv_id, pin_ref, snapshot, uid, username)
+        for participant_uid in conv.get("participants", []):
+            await self.notifier.notify_user(participant_uid, {
+                "type": "conversation.pin_changed",
+                "conversationId": conv_id,
+                "pinRef": pin_ref,
+                "pinSnapshot": snapshot,
+                "message": _serialize_msg(msg),
+            })
+        return _serialize_msg(msg)
+
+    async def clear_pin(
+        self,
+        conv_id: str,
+        uid: str,
+        username: str | None = None,
+    ) -> dict:
+        conv = await self.convs.get_conversation(conv_id)
+        if not conv or uid not in conv.get("participants", []):
+            raise PermissionError("Not a participant")
+        msg = await self.convs.clear_pin(conv_id, uid, username)
+        for participant_uid in conv.get("participants", []):
+            await self.notifier.notify_user(participant_uid, {
+                "type": "conversation.pin_changed",
+                "conversationId": conv_id,
+                "pinRef": None,
+                "pinSnapshot": None,
+                "message": _serialize_msg(msg),
+            })
+        return _serialize_msg(msg)
+
     async def get_unread_count(self, uid: str) -> int:
         return await self.convs.get_total_unread(uid)
 
@@ -101,5 +144,7 @@ def _serialize_msg(m: dict) -> dict:
         "text": m.get("text"),
         "createdAt": _ts(m.get("createdAt")),
         "type": m.get("type", "text"),
+        "subtype": m.get("subtype"),
         "context": m.get("context"),
+        "pinSnapshot": m.get("pinSnapshot"),
     }
