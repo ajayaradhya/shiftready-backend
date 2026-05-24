@@ -291,6 +291,13 @@ class SendMessageRequest(BaseModel):
     context: MessageContext | None = None
 
 
+class PinRef(BaseModel):
+    kind: Literal["item", "bundle", "sale"]
+    saleEventId: str
+    bundleId: str | None = None
+    itemId: str | None = None
+
+
 class PinSnapshot(BaseModel):
     name: str | None = None
     imageUrl: str | None = None
@@ -339,6 +346,7 @@ class ConversationSummaryResponse(BaseModel):
     unreadCount: int = 0
     status: str = "active"
     updatedAt: str | None = None
+    pin: PinRef | None = None
     pinSnapshot: PinSnapshot | None = None
 
 

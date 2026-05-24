@@ -55,6 +55,7 @@ class MessagingService:
                 "unreadCount": pm.get(uid, {}).get("unreadCount", 0),
                 "status": c.get("status", "active"),
                 "updatedAt": _ts(c.get("updatedAt")),
+                "pin": c.get("pin"),
                 "pinSnapshot": c.get("pinSnapshot"),
             })
         return result
