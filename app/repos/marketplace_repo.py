@@ -116,14 +116,18 @@ class MarketplaceRepo:
                     cover = next((img for img in images if img.get("is_cover")), images[0] if images else None)
                     if cover and cover.get("gcs_path"):
                         preview_paths.append(cover["gcs_path"])
+            sale_cover = data.get("coverImage") or {}
             results.append({
                 "eventId": sale_doc.id,
                 "suburb": data.get("suburb"),
                 "state": data.get("state"),
+                "title": data.get("title"),
+                "description": data.get("description"),
                 "itemCount": len(all_items),
                 "minPrice": min(prices) if prices else None,
                 "publishedAt": data.get("publishedAt"),
                 "preview_images": preview_paths,
+                "cover_image_gcs": sale_cover.get("gcs_path"),
             })
         return results
 
@@ -176,12 +180,16 @@ class MarketplaceRepo:
                 "discountPct": int(BUNDLE_DISCOUNT * 100),
             })
 
+        sale_cover = sale_data.get("coverImage") or {}
         return {
             "eventId": event_id,
             "sellerId": sale_data.get("sellerId"),
             "suburb": sale_data.get("suburb"),
             "state": sale_data.get("state"),
+            "title": sale_data.get("title"),
+            "description": sale_data.get("description"),
             "moveOutDate": sale_data.get("moveOutDate"),
             "publishedAt": sale_data.get("publishedAt"),
             "bundles": bundles,
+            "cover_image_gcs": sale_cover.get("gcs_path"),
         }

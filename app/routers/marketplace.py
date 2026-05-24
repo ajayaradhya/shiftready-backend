@@ -26,6 +26,15 @@ async def list_live_sales(firestore: FirestoreDep, gcs: GCSDep):
                 except Exception:
                     pass
         sale["preview_images"] = signed
+        cover_gcs = sale.pop("cover_image_gcs", None)
+        if cover_gcs and cover_gcs.startswith("gs://"):
+            try:
+                parts = cover_gcs.replace("gs://", "").split("/", 1)
+                sale["cover_image_url"] = gcs.generate_download_url(parts[0], parts[1])
+            except Exception:
+                sale["cover_image_url"] = None
+        else:
+            sale["cover_image_url"] = None
     return sales
 
 
@@ -116,11 +125,21 @@ async def get_public_sale(
 
     seller_username = seller_doc.get("username") if seller_doc else None
 
+    cover_gcs = sale.pop("cover_image_gcs", None)
+    cover_image_url = None
+    if cover_gcs and cover_gcs.startswith("gs://"):
+        try:
+            parts = cover_gcs.replace("gs://", "").split("/", 1)
+            cover_image_url = gcs.generate_download_url(parts[0], parts[1])
+        except Exception:
+            pass
+
     return {
         **sale,
         "sellerUsername": seller_username,
         "is_authenticated": user is not None,
         "is_saved": is_saved,
+        "cover_image_url": cover_image_url,
     }
 
 
