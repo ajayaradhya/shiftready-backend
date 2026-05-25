@@ -80,6 +80,9 @@ class ItemCreateRequest(BaseModel):
     material: str | None = None
     is_fragile: bool = False
     disassembly_required: bool = False
+    description: str | None = None
+    category: str | None = None
+    quantity: int | None = None
 
 
 class ItemCreateResponse(BaseModel):
