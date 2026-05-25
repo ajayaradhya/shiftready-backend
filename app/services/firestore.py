@@ -50,6 +50,21 @@ class FirestoreService:
     async def update_phone(self, user_id: str, phone_e164: str, share_opt_in: bool) -> None:
         return await self.users.update_phone(user_id, phone_e164, share_opt_in)
 
+    async def update_profile_fields(self, user_id: str, display_name: str | None, bio: str | None) -> None:
+        return await self.users.update_profile_fields(user_id, display_name, bio)
+
+    async def update_location(self, user_id: str, suburb: str | None, state: str | None) -> None:
+        return await self.users.update_location(user_id, suburb, state)
+
+    async def update_notif_prefs(self, user_id: str, prefs: dict) -> None:
+        return await self.users.update_notif_prefs(user_id, prefs)
+
+    async def update_seller_prefs(self, user_id: str, prefs: dict) -> None:
+        return await self.users.update_seller_prefs(user_id, prefs)
+
+    async def update_privacy_prefs(self, user_id: str, prefs: dict) -> None:
+        return await self.users.update_privacy_prefs(user_id, prefs)
+
     async def share_phone(self, conv_id: str, uid: str) -> None:
         return await self.conversations.share_phone(conv_id, uid)
 

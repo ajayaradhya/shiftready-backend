@@ -136,6 +136,40 @@ class UserRepo:
         except Exception:
             pass  # non-fatal
 
+    async def update_profile_fields(self, user_id: str, display_name: str | None, bio: str | None) -> None:
+        updates: dict = {"updatedAt": firestore.SERVER_TIMESTAMP}
+        if display_name is not None:
+            updates["displayName"] = display_name
+        if bio is not None:
+            updates["bio"] = bio
+        await self.db.collection("users").document(user_id).update(updates)
+
+    async def update_location(self, user_id: str, suburb: str | None, state: str | None) -> None:
+        updates: dict = {"updatedAt": firestore.SERVER_TIMESTAMP}
+        if suburb is not None:
+            updates["suburb"] = suburb
+        if state is not None:
+            updates["state"] = state
+        await self.db.collection("users").document(user_id).update(updates)
+
+    async def update_notif_prefs(self, user_id: str, prefs: dict) -> None:
+        await self.db.collection("users").document(user_id).update({
+            "notifPrefs": prefs,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        })
+
+    async def update_seller_prefs(self, user_id: str, prefs: dict) -> None:
+        await self.db.collection("users").document(user_id).update({
+            "sellerPrefs": prefs,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        })
+
+    async def update_privacy_prefs(self, user_id: str, prefs: dict) -> None:
+        await self.db.collection("users").document(user_id).update({
+            "privacyPrefs": prefs,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        })
+
     async def update_phone(self, user_id: str, phone_e164: str, share_opt_in: bool) -> None:
         await self.db.collection("users").document(user_id).update({
             "phoneE164": phone_e164,

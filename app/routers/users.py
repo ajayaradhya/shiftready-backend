@@ -5,13 +5,22 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.deps import FirestoreDep, GCSDep
 from app.models.schemas import (
+    LocationUpdateRequest,
+    NotificationsUpdateRequest,
     PhoneUpdateRequest,
+    PreferencesUpdateRequest,
+    PrivacyPrefs,
+    PrivacyUpdateRequest,
     PublicUserResponse,
     SavedListResponse,
+    NotifPrefs,
+    SellerPrefs,
     StatusResponse,
     UserProfileResponse,
+    UserSettingsResponse,
     UsernameAvailableResponse,
     UsernameUpdateRequest,
+    ProfileUpdateRequest,
 )
 from app.services.auth import User, get_current_user
 from app.utils.username import is_valid_username
@@ -98,6 +107,84 @@ async def update_phone(
             detail="Phone must be E.164 format (e.g. +61412345678)",
         )
     await firestore.update_phone(current_user.id, body.phoneE164, body.shareOptIn)
+    return StatusResponse(status="updated")
+
+
+@router.get("/me/settings", response_model=UserSettingsResponse)
+async def get_my_settings(current_user: CurrentUser, firestore: FirestoreDep):
+    user_doc = await firestore.get_user(current_user.id)
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="User record not found")
+
+    raw_notif = user_doc.get("notifPrefs") or {}
+    raw_seller = user_doc.get("sellerPrefs") or {}
+    raw_privacy = user_doc.get("privacyPrefs") or {}
+
+    return UserSettingsResponse(
+        id=current_user.id,
+        username=user_doc.get("username", ""),
+        usernameSetByUser=user_doc.get("usernameSetByUser", False),
+        usernameChangedAt=user_doc.get("usernameChangedAt"),
+        displayName=user_doc.get("displayName"),
+        bio=user_doc.get("bio"),
+        phoneE164=user_doc.get("phoneE164"),
+        phoneShareOptIn=user_doc.get("phoneShareOptIn", True),
+        suburb=user_doc.get("suburb"),
+        state=user_doc.get("state"),
+        joinedAt=user_doc.get("createdAt"),
+        notifPrefs=NotifPrefs(**{k: v for k, v in raw_notif.items() if k in NotifPrefs.model_fields}),
+        sellerPrefs=SellerPrefs(**{k: v for k, v in raw_seller.items() if k in SellerPrefs.model_fields}),
+        privacyPrefs=PrivacyPrefs(**{k: v for k, v in raw_privacy.items() if k in PrivacyPrefs.model_fields}),
+    )
+
+
+@router.patch("/me/profile", response_model=StatusResponse)
+async def update_profile(
+    body: ProfileUpdateRequest,
+    current_user: CurrentUser,
+    firestore: FirestoreDep,
+):
+    await firestore.update_profile_fields(current_user.id, body.displayName, body.bio)
+    return StatusResponse(status="updated")
+
+
+@router.patch("/me/location", response_model=StatusResponse)
+async def update_location(
+    body: LocationUpdateRequest,
+    current_user: CurrentUser,
+    firestore: FirestoreDep,
+):
+    await firestore.update_location(current_user.id, body.suburb, body.state)
+    return StatusResponse(status="updated")
+
+
+@router.patch("/me/notifications", response_model=StatusResponse)
+async def update_notifications(
+    body: NotificationsUpdateRequest,
+    current_user: CurrentUser,
+    firestore: FirestoreDep,
+):
+    await firestore.update_notif_prefs(current_user.id, body.prefs.model_dump())
+    return StatusResponse(status="updated")
+
+
+@router.patch("/me/preferences", response_model=StatusResponse)
+async def update_preferences(
+    body: PreferencesUpdateRequest,
+    current_user: CurrentUser,
+    firestore: FirestoreDep,
+):
+    await firestore.update_seller_prefs(current_user.id, body.prefs.model_dump())
+    return StatusResponse(status="updated")
+
+
+@router.patch("/me/privacy", response_model=StatusResponse)
+async def update_privacy(
+    body: PrivacyUpdateRequest,
+    current_user: CurrentUser,
+    firestore: FirestoreDep,
+):
+    await firestore.update_privacy_prefs(current_user.id, body.prefs.model_dump())
     return StatusResponse(status="updated")
 
 

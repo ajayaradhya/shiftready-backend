@@ -233,6 +233,69 @@ class UserProfileResponse(BaseModel):
     usernameChangedAt: datetime | None = None
 
 
+class NotifPrefs(BaseModel):
+    msg: bool = True
+    offer: bool = True
+    counter: bool = True
+    deal: bool = True
+    ready: bool = True
+    viewed: bool = False
+    buy_msg: bool = True
+    buy_offer: bool = True
+    price_drop: bool = False
+
+
+class SellerPrefs(BaseModel):
+    paymentMethods: list[str] = ["cash", "bank", "payid"]
+    pickupDays: list[str] = ["Weekdays", "Weekends"]
+    pickupTimes: list[str] = ["Afternoon (12–5)"]
+    minOfferPercent: int = 70
+
+
+class PrivacyPrefs(BaseModel):
+    messagingFilter: str = "anyone"
+    profileVisible: bool = True
+
+
+class UserSettingsResponse(BaseModel):
+    id: str
+    username: str
+    usernameSetByUser: bool
+    usernameChangedAt: datetime | None = None
+    displayName: str | None = None
+    bio: str | None = None
+    phoneE164: str | None = None
+    phoneShareOptIn: bool = True
+    suburb: str | None = None
+    state: str | None = None
+    joinedAt: datetime | None = None
+    notifPrefs: NotifPrefs = NotifPrefs()
+    sellerPrefs: SellerPrefs = SellerPrefs()
+    privacyPrefs: PrivacyPrefs = PrivacyPrefs()
+
+
+class ProfileUpdateRequest(BaseModel):
+    displayName: str | None = Field(default=None, max_length=80)
+    bio: str | None = Field(default=None, max_length=240)
+
+
+class LocationUpdateRequest(BaseModel):
+    suburb: str | None = Field(default=None, max_length=80)
+    state: str | None = Field(default=None, max_length=10)
+
+
+class NotificationsUpdateRequest(BaseModel):
+    prefs: NotifPrefs
+
+
+class PreferencesUpdateRequest(BaseModel):
+    prefs: SellerPrefs
+
+
+class PrivacyUpdateRequest(BaseModel):
+    prefs: PrivacyPrefs
+
+
 class UsernameAvailableResponse(BaseModel):
     available: bool
     username: str
