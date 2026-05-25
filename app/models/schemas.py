@@ -123,6 +123,12 @@ class ItemMoveRequest(BaseModel):
     to_bundle_id: str
 
 
+class ItemRepriceResponse(BaseModel):
+    predicted_listing_price: float
+    actual_listing_price: float
+    pricing_reasoning: str
+
+
 class ImageReorderRequest(BaseModel):
     image_ids: list[str]
 

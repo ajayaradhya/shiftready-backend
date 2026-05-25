@@ -12,7 +12,7 @@ from app.models.schemas import (
     CaptureInitResponse, CaptureFrameResponse, CaptureFinalizeV2Request, CaptureFinalizeV2Response,
     CoverConfirmRequest, CoverFromItemRequest, CoverUploadUrlResponse,
     ImageConfirmRequest, ImageUploadUrlItem, ImageUploadUrlsRequest, ImageUploadUrlsResponse, ImageReorderRequest,
-    ItemCreateRequest, ItemCreateResponse, ItemUpdate, ItemMoveRequest,
+    ItemCreateRequest, ItemCreateResponse, ItemUpdate, ItemMoveRequest, ItemRepriceResponse,
     PriceEstimationRequest,
     SalePublishRequest, SaleUpdate,
     SaleStatusResponse, StatusResponse,
@@ -417,6 +417,64 @@ async def update_item(
     if "actual_listing_price" in updates:
         await firestore.recalculate_bundle_total(event_id, bundle_id)
     return {"status": "updated"}
+
+
+@router.post("/{event_id}/bundles/{bundle_id}/items/{item_id}/reprice", response_model=ItemRepriceResponse)
+async def reprice_item(
+    event_id: str,
+    bundle_id: str,
+    item_id: str,
+    firestore: FirestoreDep,
+    gemini: GeminiDep,
+    _: dict = Depends(validate_sale_owner),
+):
+    sale = await firestore.get_full_event_summary(event_id)
+    if not sale:
+        raise HTTPException(status_code=404, detail="Sale not found")
+
+    item_doc = None
+    for bundle in sale.get("bundles", []):
+        if bundle["id"] == bundle_id:
+            for it in bundle["items"]:
+                if it["id"] == item_id:
+                    item_doc = it
+                    break
+
+    if not item_doc:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    move_out_date = sale.get("moveOutDate") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    context_item = {
+        "id": item_id,
+        "name": item_doc["name"],
+        "brand": item_doc.get("brand"),
+        "condition": item_doc.get("condition"),
+        "original_price": item_doc.get("actual_original_price") or item_doc.get("predicted_original_price"),
+        "purchase_year": item_doc.get("actual_year_of_purchase") or item_doc.get("predicted_year_of_purchase"),
+    }
+
+    priced_results, _ = await gemini.estimate_listing_prices([context_item], move_out_date)
+
+    if not priced_results:
+        raise HTTPException(status_code=502, detail="AI pricing returned no results")
+
+    result = priced_results[0]
+    listing_price = result.get("listing_price", 0)
+    reasoning = result.get("reasoning", "Market adjustment based on Sydney demand.")
+
+    await firestore.update_item_data(event_id, bundle_id, item_id, {
+        "predicted_listing_price": listing_price,
+        "actual_listing_price": listing_price,
+        "pricing_reasoning": reasoning,
+    })
+    await firestore.recalculate_bundle_total(event_id, bundle_id)
+
+    return ItemRepriceResponse(
+        predicted_listing_price=listing_price,
+        actual_listing_price=listing_price,
+        pricing_reasoning=reasoning,
+    )
 
 
 @router.patch("/{event_id}/bundles/{bundle_id}/items/{item_id}/move", response_model=StatusResponse)
