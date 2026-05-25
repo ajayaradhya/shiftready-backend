@@ -152,7 +152,7 @@ class MarketplaceRepo:
             for b in bundle_docs
         ])
 
-        BUNDLE_DISCOUNT = 0.20
+        DEFAULT_BUNDLE_DISCOUNT = 0.20
         bundles = []
         for bundle_doc, items in zip(bundle_docs, item_snapshots):
             b_data = bundle_doc.to_dict()
@@ -170,14 +170,16 @@ class MarketplaceRepo:
                     "image_gcs_path": cover.get("gcs_path") if cover else None,
                 })
             item_total = sum(i["price"] for i in bundle_items)
-            bundle_price = round(item_total * (1 - BUNDLE_DISCOUNT), 2)
+            stored_pct = b_data.get("bundleDiscountPercent")
+            discount = (stored_pct / 100.0) if stored_pct is not None else DEFAULT_BUNDLE_DISCOUNT
+            bundle_price = round(item_total * (1 - discount), 2)
             bundles.append({
                 "id": bundle_doc.id,
                 "name": b_data.get("name"),
                 "items": bundle_items,
                 "itemTotal": item_total,
                 "bundlePrice": bundle_price,
-                "discountPct": int(BUNDLE_DISCOUNT * 100),
+                "discountPct": int(discount * 100),
             })
 
         sale_cover = sale_data.get("coverImage") or {}

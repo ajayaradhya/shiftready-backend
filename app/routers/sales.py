@@ -8,7 +8,7 @@ from google.cloud.firestore import ArrayUnion
 
 from app.domain.status import SaleStatus
 from app.models.schemas import (
-    BundleCreateRequest, BundleCreateResponse, BundleRenameRequest,
+    BundleCreateRequest, BundleCreateResponse, BundleUpdateRequest,
     CaptureInitResponse, CaptureFrameResponse, CaptureFinalizeV2Request, CaptureFinalizeV2Response,
     CoverConfirmRequest, CoverFromItemRequest, CoverUploadUrlResponse,
     ImageConfirmRequest, ImageUploadUrlItem, ImageUploadUrlsRequest, ImageUploadUrlsResponse, ImageReorderRequest,
@@ -349,16 +349,22 @@ async def add_bundle(
 
 
 @router.patch("/{event_id}/bundles/{bundle_id}", response_model=StatusResponse)
-async def rename_bundle(
+async def update_bundle(
     event_id: str,
     bundle_id: str,
-    payload: BundleRenameRequest,
+    payload: BundleUpdateRequest,
     firestore: FirestoreDep,
     sale: dict = Depends(validate_sale_owner),
 ):
     assert_editable(sale)
-    await firestore.rename_bundle(event_id, bundle_id, payload.name)
-    await notifier.notify_event(event_id, {"type": "BUNDLE_RENAMED", "bundle_id": bundle_id, "name": payload.name})
+    raw = payload.model_dump(exclude_none=True)
+    if not raw:
+        raise HTTPException(status_code=422, detail="No valid fields provided")
+    # Remap snake_case payload keys to camelCase Firestore convention
+    key_map = {"bundle_discount_percent": "bundleDiscountPercent"}
+    updates = {key_map.get(k, k): v for k, v in raw.items()}
+    await firestore.update_bundle_metadata(event_id, bundle_id, updates)
+    await notifier.notify_event(event_id, {"type": "BUNDLE_UPDATED", "bundle_id": bundle_id, **updates})
     return {"status": "updated"}
 
 
@@ -397,7 +403,7 @@ async def update_item(
 ):
     updates = payload.model_dump(exclude_none=True)
     if not updates:
-        raise HTTPException(status_code=422, detail="No valid fields provided")
+        return {"status": "updated"}
 
     await firestore.update_item_data(event_id, bundle_id, item_id, updates)
 

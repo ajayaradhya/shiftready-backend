@@ -64,6 +64,11 @@ class BundleRenameRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=80)
 
 
+class BundleUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    bundle_discount_percent: float | None = Field(default=None, ge=0, le=100)
+
+
 # --- Item Schemas ---
 
 class ItemCreateRequest(BaseModel):
@@ -208,6 +213,7 @@ class SaleStatusResponse(BaseModel):
     itemCount: int = 0
     totalValue: float = 0.0
     preview_images: list[str] = []
+    title: str | None = None
 
 
 # --- User / Username Schemas ---
