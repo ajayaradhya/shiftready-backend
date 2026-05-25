@@ -13,17 +13,13 @@ from app.models.schemas import (
     CoverConfirmRequest, CoverFromItemRequest, CoverUploadUrlResponse,
     ImageConfirmRequest, ImageUploadUrlItem, ImageUploadUrlsRequest, ImageUploadUrlsResponse, ImageReorderRequest,
     ItemCreateRequest, ItemCreateResponse, ItemUpdate, ItemMoveRequest, ItemRepriceResponse,
-    PriceEstimationRequest,
     SalePublishRequest, SaleUpdate,
     SaleStatusResponse, StatusResponse,
 )
 from app.services.permissions import assert_editable
 
 from app.core.deps import FirestoreDep, GCSDep, BucketDep, GeminiDep
-from app.services.pipelines import (
-    run_capture_refinement_pipeline,
-    run_pricing_pipeline,
-)
+from app.services.pipelines import run_capture_refinement_pipeline
 from app.services.notifier import notifier
 from app.services.auth import get_current_user, validate_sale_owner, User, security
 
@@ -175,20 +171,6 @@ async def status_websocket(
 
 # --- STATE TRANSITIONS ---
 
-@router.post("/{event_id}/estimate", response_model=StatusResponse)
-async def trigger_reestimation(
-    event_id: str,
-    payload: PriceEstimationRequest,
-    background_tasks: BackgroundTasks,
-    firestore: FirestoreDep,
-    gemini: GeminiDep,
-    event: dict = Depends(validate_sale_owner),
-):
-    # Store the move-out date to improve AI pricing urgency analysis
-    await firestore.update_sale_metadata(event_id, {"moveOutDate": payload.move_out_date})
-    await firestore.transition_sale_status(event_id, SaleStatus.PRICING_IN_PROGRESS)
-    background_tasks.add_task(run_pricing_pipeline, event_id, firestore, gemini)
-    return {"status": SaleStatus.PRICING_IN_PROGRESS}
 
 @router.post("/{event_id}/publish", response_model=StatusResponse)
 async def publish_sale(
@@ -463,13 +445,7 @@ async def reprice_item(
     listing_price = result.get("listing_price", 0)
     reasoning = result.get("reasoning", "Market adjustment based on Sydney demand.")
 
-    await firestore.update_item_data(event_id, bundle_id, item_id, {
-        "predicted_listing_price": listing_price,
-        "actual_listing_price": listing_price,
-        "pricing_reasoning": reasoning,
-    })
-    await firestore.recalculate_bundle_total(event_id, bundle_id)
-
+    # Return suggestion only — caller applies via PATCH if user accepts
     return ItemRepriceResponse(
         predicted_listing_price=listing_price,
         actual_listing_price=listing_price,

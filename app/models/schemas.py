@@ -107,6 +107,7 @@ class ItemUpdate(BaseModel):
     name: str | None = None
     brand: str | None = None
     actual_listing_price: float | None = None
+    predicted_listing_price: float | None = None
     actual_original_price: float | None = None
     actual_year_of_purchase: int | None = None
     condition: str | None = None
@@ -115,6 +116,7 @@ class ItemUpdate(BaseModel):
     is_fragile: bool | None = None
     disassembly_required: bool | None = None
     description: str | None = Field(default=None, max_length=500)
+    pricing_reasoning: str | None = Field(default=None, max_length=1000)
     category: ItemCategory | None = None
     quantity: int | None = Field(default=None, ge=1)
 
