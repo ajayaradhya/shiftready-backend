@@ -394,11 +394,17 @@ async def seed(db: firestore.AsyncClient, gcs: storage.Client):
 
         for bundle_def in sale_def["bundles"]:
             b_ref = sale_ref.collection("bundles").document()
+            bundle_suggested_price = sum(
+                i.get("actual_listing_price", 0) or 0
+                for i in bundle_def["items"]
+            )
             await b_ref.set({
                 "name": bundle_def["name"],
+                "suggestedPrice": bundle_suggested_price,
+                "isPublished": False,
                 "createdAt": now,
             })
-            print(f"  Bundle: {bundle_def['name']} ({b_ref.id})")
+            print(f"  Bundle: {bundle_def['name']} ({b_ref.id}) suggestedPrice={bundle_suggested_price}")
 
             for item_def in bundle_def["items"]:
                 image_key = item_def.pop("image_key", None)
@@ -409,6 +415,8 @@ async def seed(db: firestore.AsyncClient, gcs: storage.Client):
                 await i_ref.set({
                     **item_def,
                     "images": images,
+                    "confidence": 0.9,
+                    "timestamp_label": "",
                     "predicted_listing_price": item_def.get("actual_listing_price"),
                     "predicted_original_price": item_def.get("actual_original_price"),
                     "predicted_year_of_purchase": item_def.get("actual_year_of_purchase"),
