@@ -49,6 +49,10 @@ PHYSICAL ATTRIBUTES:
 - Identify 'material' (e.g., 'Oak', 'Velvet', 'Stainless Steel').
 - Flag 'is_fragile' and 'disassembly_required'.
 
+CATEGORY: Assign one of: furniture, appliance, electronics, decor, clothing, books_media,
+sports_fitness, garden_outdoor, kitchen_dining, baby_kids, tools_hardware, toys_games,
+lighting, storage, other.
+
 Set 'timestamp_label' to "" (no video involved).
 Do not generate 'id' fields.
 """
@@ -56,6 +60,10 @@ Do not generate 'id' fields.
 _PROMPT = """
 Analyze this video and identify sellable items.
 Organize items into Room Bundles (e.g., 'Living Room', 'Kitchen').
+
+CATEGORY: Assign one of: furniture, appliance, electronics, decor, clothing, books_media,
+sports_fitness, garden_outdoor, kitchen_dining, baby_kids, tools_hardware, toys_games,
+lighting, storage, other.
 
 TEMPORAL RULES:
 - Set 'timestamp_label' (format "MM:SS") to the single moment the item is MOST clearly

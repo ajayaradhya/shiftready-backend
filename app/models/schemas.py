@@ -97,8 +97,18 @@ class ItemCreateResponse(BaseModel):
 class ItemCategory(str, Enum):
     furniture = "furniture"
     appliance = "appliance"
-    decor = "decor"
     electronics = "electronics"
+    decor = "decor"
+    clothing = "clothing"
+    books_media = "books_media"
+    sports_fitness = "sports_fitness"
+    garden_outdoor = "garden_outdoor"
+    kitchen_dining = "kitchen_dining"
+    baby_kids = "baby_kids"
+    tools_hardware = "tools_hardware"
+    toys_games = "toys_games"
+    lighting = "lighting"
+    storage = "storage"
     other = "other"
 
 

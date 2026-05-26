@@ -43,14 +43,22 @@ async def search_marketplace(
     firestore: FirestoreDep,
     gcs: GCSDep,
     q: str | None = Query(None, description="Search by item name or brand"),
-    suburb: str | None = Query(None, description="Filter by Sydney suburb (e.g. Waterloo)"),
+    suburb: str | None = Query(None, description="Filter by Sydney suburb"),
+    category: str | None = Query(None, description="furniture|appliance|electronics|decor|other"),
+    condition: str | None = Query(None, description="New|Like New|Good|Fair"),
+    min_price: float | None = Query(None, description="Minimum listing price"),
+    max_price: float | None = Query(None, description="Maximum listing price"),
+    sort: str | None = Query(None, description="newest|price_asc|price_desc"),
     user: User | None = Depends(get_optional_user),
 ):
     """
     The Primary Marketplace View.
-    Shows nearby items (by suburb) and supports keyword search.
+    Shows nearby items (by suburb) and supports keyword/category/condition/price/sort filters.
     """
-    items = await firestore.get_active_inventory(suburb=suburb, query=q)
+    items = await firestore.get_active_inventory(
+        suburb=suburb, query=q, category=category,
+        condition=condition, min_price=min_price, max_price=max_price, sort=sort,
+    )
 
     # Mask sensitive data for anonymous users
     processed_items = []
@@ -74,6 +82,7 @@ async def search_marketplace(
             "name": item.get("name", "Unknown Item"),
             "brand": item.get("brand", "Generic"),
             "condition": item.get("condition", "Good"),
+            "category": item.get("category"),
             "price": item.get("actual_listing_price"),
             "bundleName": item.get("bundleName"),
             "eventId": item.get("eventId"),

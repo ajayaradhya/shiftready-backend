@@ -181,6 +181,16 @@ class FirestoreService:
         return await self.marketplace.list_live_sales()
 
     async def get_active_inventory(
-        self, suburb: str | None = None, query: str | None = None
+        self,
+        suburb: str | None = None,
+        query: str | None = None,
+        category: str | None = None,
+        condition: str | None = None,
+        min_price: float | None = None,
+        max_price: float | None = None,
+        sort: str | None = None,
     ) -> list[dict]:
-        return await self.marketplace.get_active_inventory(suburb=suburb, query=query)
+        return await self.marketplace.get_active_inventory(
+            suburb=suburb, query=query, category=category,
+            condition=condition, min_price=min_price, max_price=max_price, sort=sort,
+        )

@@ -9,7 +9,14 @@ class MarketplaceRepo:
         self.db = db
 
     async def get_active_inventory(
-        self, suburb: str | None = None, query: str | None = None
+        self,
+        suburb: str | None = None,
+        query: str | None = None,
+        category: str | None = None,
+        condition: str | None = None,
+        min_price: float | None = None,
+        max_price: float | None = None,
+        sort: str | None = None,
     ) -> list[dict]:
         sales_query = self.db.collection("saleEvents").where(
             filter=firestore.FieldFilter("status", "in", [SaleStatus.LIVE, SaleStatus.PARTIALLY_SOLD])
@@ -45,19 +52,35 @@ class MarketplaceRepo:
 
         results = []
         q_lower = query.lower() if query else None
+        condition_lower = condition.lower() if condition else None
         for (sale, bundle), items in zip(bundle_pairs, item_snapshots):
             sale_data = sale.to_dict()
             b_data = bundle.to_dict()
             for item in items:
                 item_data = item.to_dict()
+
+                sale_status = item_data.get("sale_status", "available")
+                if sale_status == "withdrawn":
+                    continue
+
                 if q_lower and (
                     q_lower not in item_data.get("name", "").lower()
                     and q_lower not in item_data.get("brand", "").lower()
                 ):
                     continue
-                sale_status = item_data.get("sale_status", "available")
-                if sale_status == "withdrawn":
+
+                if category and item_data.get("category", "").lower() != category.lower():
                     continue
+
+                if condition_lower and item_data.get("condition", "").lower() != condition_lower:
+                    continue
+
+                price = item_data.get("actual_listing_price")
+                if min_price is not None and (price is None or price < min_price):
+                    continue
+                if max_price is not None and (price is None or price > max_price):
+                    continue
+
                 results.append({
                     **item_data,
                     "id": item.id,
@@ -66,6 +89,12 @@ class MarketplaceRepo:
                     "sellerId": sale_data.get("sellerId"),
                     "sale_status": sale_status,
                 })
+
+        if sort == "price_asc":
+            results.sort(key=lambda x: (x.get("actual_listing_price") is None, x.get("actual_listing_price") or 0))
+        elif sort == "price_desc":
+            results.sort(key=lambda x: (x.get("actual_listing_price") is None, -(x.get("actual_listing_price") or 0)))
+
         return results
 
     async def get_item_standalone(
