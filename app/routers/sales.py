@@ -4,8 +4,6 @@ import mimetypes
 import uuid
 from datetime import datetime, timezone
 
-logger = logging.getLogger(__name__)
-
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, WebSocket, WebSocketDisconnect, UploadFile, File
 from google.cloud.firestore import ArrayUnion
 
@@ -20,11 +18,12 @@ from app.models.schemas import (
     SaleStatusResponse, StatusResponse,
 )
 from app.services.permissions import assert_editable
-
 from app.core.deps import FirestoreDep, GCSDep, BucketDep, GeminiDep
 from app.services.pipelines import run_capture_refinement_pipeline
 from app.services.notifier import notifier
 from app.services.auth import get_current_user, validate_sale_owner, User, security
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/sales")
 
