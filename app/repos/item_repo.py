@@ -59,6 +59,17 @@ class ItemRepo:
         await self._bundles.recalculate_bundle_total(event_id, from_bundle_id)
         await self._bundles.recalculate_bundle_total(event_id, to_bundle_id)
 
+    async def list_items(self, event_id: str, bundle_id: str) -> list[dict]:
+        docs = await (
+            self.db.collection("saleEvents")
+            .document(event_id)
+            .collection("bundles")
+            .document(bundle_id)
+            .collection("items")
+            .get()
+        )
+        return [{**d.to_dict(), "id": d.id} for d in docs]
+
     async def reorder_images(
         self, event_id: str, bundle_id: str, item_id: str, image_ids: list[str]
     ) -> None:

@@ -13,8 +13,24 @@ class SaleStatus(str, Enum):
     # Active
     LIVE = "live"
     PARTIALLY_SOLD = "partially_sold"
+    SOLD = "sold"
 
     # Conclusion
     EXPIRED = "expired"
     ARCHIVED = "archived"
     FAILED = "failed"
+
+
+class ItemSaleStatus(str, Enum):
+    AVAILABLE = "available"
+    RESERVED = "reserved"
+    SOLD = "sold"
+    WITHDRAWN = "withdrawn"
+
+
+class BundleSaleStatus(str, Enum):
+    AVAILABLE = "available"
+    PARTIALLY_SOLD = "partially_sold"
+    RESERVED = "reserved"
+    SOLD = "sold"
+    WITHDRAWN = "withdrawn"

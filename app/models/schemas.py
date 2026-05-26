@@ -469,3 +469,53 @@ class SavedListResponse(BaseModel):
 
 class SaveToggleResponse(BaseModel):
     saved: bool
+
+
+# --- Sold Lifecycle Schemas ---
+
+class MarkSoldRequest(BaseModel):
+    final_price: float | None = None
+    buyer_uid: str | None = None
+    buyer_label: str | None = None
+    conversation_id: str | None = None
+    offer_id: str | None = None
+    payment_method: str | None = None
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class MarkBundleSoldRequest(BaseModel):
+    scope: Literal["bundle_as_unit", "all_items"] = "bundle_as_unit"
+    final_price: float | None = None
+    buyer_uid: str | None = None
+    buyer_label: str | None = None
+    conversation_id: str | None = None
+    payment_method: str | None = None
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class MarkSaleSoldRequest(BaseModel):
+    final_price: float | None = None
+    buyer_uid: str | None = None
+    buyer_label: str | None = None
+    payment_method: str | None = None
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class WithdrawRequest(BaseModel):
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class TransactionResponse(BaseModel):
+    id: str
+    type: str
+    granularity: str
+    amount: float | None = None
+    paymentMethod: str | None = None
+    buyerUid: str | None = None
+    buyerLabel: str | None = None
+    sellerUid: str | None = None
+    actorUid: str | None = None
+    notes: str | None = None
+    bundleId: str | None = None
+    itemId: str | None = None
+    createdAt: datetime | None = None

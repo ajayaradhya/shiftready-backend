@@ -38,6 +38,15 @@ class BundleRepo:
         await bundle_ref.delete()
         return True
 
+    async def list_bundles(self, event_id: str) -> list[dict]:
+        docs = await (
+            self.db.collection("saleEvents")
+            .document(event_id)
+            .collection("bundles")
+            .get()
+        )
+        return [{**d.to_dict(), "id": d.id} for d in docs]
+
     async def recalculate_bundle_total(self, event_id: str, bundle_id: str) -> float:
         bundle_ref = self._bundle_ref(event_id, bundle_id)
         total = 0.0

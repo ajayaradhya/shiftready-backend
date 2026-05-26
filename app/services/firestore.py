@@ -7,7 +7,9 @@ from app.repos.conversation_repo import ConversationRepo
 from app.repos.item_repo import ItemRepo
 from app.repos.marketplace_repo import MarketplaceRepo
 from app.repos.sale_repo import SaleRepo
+from app.repos.transaction_repo import TransactionRepo
 from app.repos.user_repo import UserRepo
+from app.services.inventory_lifecycle import InventoryLifecycleService
 
 
 class FirestoreService:
@@ -30,6 +32,10 @@ class FirestoreService:
         self.users = UserRepo(db)
         self.marketplace = MarketplaceRepo(db)
         self.conversations = ConversationRepo(db)
+        self.transactions = TransactionRepo(db)
+        self.lifecycle = InventoryLifecycleService(
+            db, self.items, self.bundles, self.sales, self.transactions
+        )
 
     # --- user ---
     async def upsert_user(self, user_id: str, email: str, name: str | None = None) -> str:

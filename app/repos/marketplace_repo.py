@@ -12,7 +12,7 @@ class MarketplaceRepo:
         self, suburb: str | None = None, query: str | None = None
     ) -> list[dict]:
         sales_query = self.db.collection("saleEvents").where(
-            filter=firestore.FieldFilter("status", "==", SaleStatus.LIVE)
+            filter=firestore.FieldFilter("status", "in", [SaleStatus.LIVE, SaleStatus.PARTIALLY_SOLD])
         )
         if suburb:
             sales_query = sales_query.where(
@@ -55,12 +55,16 @@ class MarketplaceRepo:
                     and q_lower not in item_data.get("brand", "").lower()
                 ):
                     continue
+                sale_status = item_data.get("sale_status", "available")
+                if sale_status == "withdrawn":
+                    continue
                 results.append({
                     **item_data,
                     "id": item.id,
                     "bundleName": b_data.get("name"),
                     "eventId": sale.id,
                     "sellerId": sale_data.get("sellerId"),
+                    "sale_status": sale_status,
                 })
         return results
 
@@ -75,10 +79,10 @@ class MarketplaceRepo:
         return {**doc.to_dict(), "id": doc.id} if doc.exists else None
 
     async def list_live_sales(self) -> list[dict]:
-        """Return summary rows for every LIVE sale — used by the landing page sales scroll."""
+        """Return summary rows for every LIVE or PARTIALLY_SOLD sale — used by the landing page sales scroll."""
         live_docs = await (
             self.db.collection("saleEvents")
-            .where(filter=firestore.FieldFilter("status", "==", SaleStatus.LIVE))
+            .where(filter=firestore.FieldFilter("status", "in", [SaleStatus.LIVE, SaleStatus.PARTIALLY_SOLD]))
             .limit(20)
             .get()
         )
@@ -137,7 +141,7 @@ class MarketplaceRepo:
             return None
 
         sale_data = sale_doc.to_dict()
-        if sale_data.get("status") != SaleStatus.LIVE:
+        if sale_data.get("status") not in (SaleStatus.LIVE, SaleStatus.PARTIALLY_SOLD):
             return None
 
         bundle_docs = await (
@@ -161,6 +165,9 @@ class MarketplaceRepo:
                 d = item.to_dict()
                 images = d.get("images") or []
                 cover = next((img for img in images if img.get("is_cover")), images[0] if images else None)
+                item_sale_status = d.get("sale_status", "available")
+                if item_sale_status == "withdrawn":
+                    continue
                 bundle_items.append({
                     "id": item.id,
                     "name": d.get("name"),
@@ -168,6 +175,7 @@ class MarketplaceRepo:
                     "condition": d.get("condition"),
                     "price": d.get("actual_listing_price") or 0,
                     "image_gcs_path": cover.get("gcs_path") if cover else None,
+                    "sale_status": item_sale_status,
                 })
             item_total = sum(i["price"] for i in bundle_items)
             stored_pct = b_data.get("bundleDiscountPercent")
