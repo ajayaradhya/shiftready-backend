@@ -1,7 +1,10 @@
 import asyncio
+import logging
 import mimetypes
 import uuid
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, WebSocket, WebSocketDisconnect, UploadFile, File
 from google.cloud.firestore import ArrayUnion
@@ -60,11 +63,21 @@ async def capture_frame(
     blob_name = f"captures/{event_id}/{frame_id}.jpg"
     gcs_uri = gcs.upload_bytes(bucket, blob_name, data, content_type="image/jpeg")
 
-    result = await gemini.identify_single_frame(gcs_uri)
+    try:
+        result = await gemini.identify_single_frame(gcs_uri)
+        name = result.get("name") or "Unidentified Item"
+        brand = result.get("brand") or None
+        price = float(result.get("predicted_original_price") or 0.0)
+    except Exception as exc:
+        logger.warning(f"Frame identification failed for {gcs_uri}: {exc}")
+        name = "Unidentified Item"
+        brand = None
+        price = 0.0
+
     return CaptureFrameResponse(
-        name=result.get("name", "Unknown Item"),
-        brand=result.get("brand", "Unknown"),
-        predicted_original_price=float(result.get("predicted_original_price", 0.0)),
+        name=name,
+        brand=brand,
+        predicted_original_price=price,
         gcs_uri=gcs_uri,
     )
 

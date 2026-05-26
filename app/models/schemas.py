@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -15,7 +15,7 @@ class CaptureInitResponse(BaseModel):
 
 class CaptureFrameResponse(BaseModel):
     name: str
-    brand: str
+    brand: Optional[str] = None
     predicted_original_price: float
     gcs_uri: str
 
