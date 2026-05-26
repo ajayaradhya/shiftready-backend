@@ -1,4 +1,6 @@
+import logging
 import time
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
@@ -9,11 +11,27 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routers import sales, marketplace, users, messages, sold, notifications
 
 setup_logging()
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Pre-warm the Firestore gRPC connection so the first real request
+    # doesn't pay the ~1-2s connection setup cost.
+    try:
+        from app.services import firestore_svc
+        await firestore_svc.db.collection("_warmup").limit(1).get()
+        logger.info("Firestore connection pre-warmed")
+    except Exception as exc:
+        logger.warning("Firestore warmup skipped: %s", exc)
+    yield
+
 
 app = FastAPI(
     title="ShiftReady API",
     description="AI-native relocation inventory and pricing engine.",
     version=settings.api_version,
+    lifespan=lifespan,
 )
 
 origins = [
@@ -57,6 +75,13 @@ async def health_check():
         "uptime_seconds": int(time.time() - _start_time),
         "service": "shiftready-backend",
     }
+
+
+@app.get("/_ah/warmup")
+async def warmup():
+    """Cloud Run warmup handler — pre-initializes lazy connections."""
+    from app.services import firestore_svc  # noqa: F401 — triggers singleton init
+    return {"status": "warm"}
 
 
 if __name__ == "__main__":

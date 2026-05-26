@@ -1,7 +1,12 @@
 import logging
+import time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+
+# Per-user TTL cache for unread count: {uid: (count, expires_at)}
+_unread_cache: dict[str, tuple[int, float]] = {}
+_UNREAD_TTL = 20.0
 
 from app.core.deps import FirestoreDep, MessagingDep
 from app.models.schemas import (
@@ -63,7 +68,12 @@ async def list_conversations(current_user: CurrentUser, firestore: FirestoreDep,
 
 @router.get("/conversations/unread", response_model=UnreadCountResponse)
 async def unread_count(current_user: CurrentUser, messaging: MessagingDep):
-    count = await messaging.get_unread_count(current_user.id)
+    uid = current_user.id
+    cached = _unread_cache.get(uid)
+    if cached and time.monotonic() < cached[1]:
+        return UnreadCountResponse(unreadCount=cached[0])
+    count = await messaging.get_unread_count(uid)
+    _unread_cache[uid] = (count, time.monotonic() + _UNREAD_TTL)
     return UnreadCountResponse(unreadCount=count)
 
 
@@ -101,12 +111,14 @@ async def send_message(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     await firestore.users.update_last_seen(current_user.id)
+    _unread_cache.pop(current_user.id, None)
     return MessageResponse(**msg)
 
 
 @router.post("/conversations/{conv_id}/read", response_model=dict)
 async def mark_read(conv_id: str, current_user: CurrentUser, messaging: MessagingDep):
     await messaging.mark_read(conv_id, current_user.id)
+    _unread_cache.pop(current_user.id, None)
     return {"status": "ok"}
 
 
