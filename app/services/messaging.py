@@ -7,9 +7,10 @@ logger = logging.getLogger(__name__)
 class MessagingService:
     """Thin orchestration layer over ConversationRepo + notifier."""
 
-    def __init__(self, conversation_repo, notifier):
+    def __init__(self, conversation_repo, notifier, notification_repo=None):
         self.convs = conversation_repo
         self.notifier = notifier
+        self.notifs = notification_repo
 
     async def start_conversation(self, uid_a: str, uid_b: str) -> tuple[str, dict]:
         return await self.convs.get_or_create_conversation(uid_a, uid_b)
@@ -34,6 +35,19 @@ class MessagingService:
                     "conversationId": conv_id,
                     "message": _serialize_msg(msg),
                 })
+                if self.notifs:
+                    preview = text[:80] + "…" if len(text) > 80 else text
+                    notif_id = await self.notifs.create(
+                        uid=other_uid,
+                        type="message.new",
+                        title="New message",
+                        body=preview,
+                        link="/messages",
+                    )
+                    await self.notifier.notify_user(other_uid, {
+                        "type": "notification.new",
+                        "notificationId": notif_id,
+                    })
         return _serialize_msg(msg)
 
     async def list_conversations(self, uid: str, user_repo) -> list[dict]:
@@ -166,6 +180,18 @@ class MessagingService:
                 "conversationId": conv_id,
                 "message": _serialize_msg(msg),
             })
+            if self.notifs:
+                notif_id = await self.notifs.create(
+                    uid=other_uid,
+                    type="offer.new",
+                    title="New offer received",
+                    body=f"${amount:.0f} offer",
+                    link="/messages",
+                )
+                await self.notifier.notify_user(other_uid, {
+                    "type": "notification.new",
+                    "notificationId": notif_id,
+                })
         return _serialize_msg(msg)
 
     async def accept_offer(
@@ -178,14 +204,27 @@ class MessagingService:
         if not conv:
             raise ValueError("Conversation not found")
         _offer, accepted_msg, deal_msg = await self.convs.accept_offer(conv_id, offer_id, acceptor_uid)
+        amount = _offer.get("amount", 0)
         for uid in conv.get("participants", []):
             await self.notifier.notify_user(uid, {
                 "type": "conversation.deal_agreed",
                 "conversationId": conv_id,
-                "amount": _offer.get("amount"),
+                "amount": amount,
                 "message": _serialize_msg(accepted_msg),
                 "dealMessage": _serialize_msg(deal_msg),
             })
+            if self.notifs and uid != acceptor_uid:
+                notif_id = await self.notifs.create(
+                    uid=uid,
+                    type="offer.accepted",
+                    title="Offer accepted 🎉",
+                    body=f"Your ${amount:.0f} offer was accepted",
+                    link="/messages",
+                )
+                await self.notifier.notify_user(uid, {
+                    "type": "notification.new",
+                    "notificationId": notif_id,
+                })
         return _serialize_msg(accepted_msg)
 
     async def counter_offer(
@@ -206,6 +245,18 @@ class MessagingService:
                 "conversationId": conv_id,
                 "message": _serialize_msg(msg),
             })
+            if self.notifs:
+                notif_id = await self.notifs.create(
+                    uid=other_uid,
+                    type="offer.countered",
+                    title="Counter-offer received",
+                    body=f"${new_amount:.0f} counter-offer",
+                    link="/messages",
+                )
+                await self.notifier.notify_user(other_uid, {
+                    "type": "notification.new",
+                    "notificationId": notif_id,
+                })
         for uid in conv.get("participants", []):
             await self.notifier.notify_user(uid, {
                 "type": "offer.updated",

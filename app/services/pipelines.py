@@ -209,6 +209,24 @@ async def run_pricing_pipeline(
             "message": "Pricing complete",
         })
 
+        seller_id = summary.get("sellerId")
+        if seller_id:
+            item_count = sum(len(b.get("items", [])) for b in summary.get("bundles", []))
+            try:
+                notif_id = await firestore.notifications.create(
+                    uid=seller_id,
+                    type="sale.ready",
+                    title="Your sale is ready to review",
+                    body=f"{item_count} item{'s' if item_count != 1 else ''} priced and ready",
+                    link=f"/seller-central/inventory/{event_id}",
+                )
+                await notifier.notify_user(seller_id, {
+                    "type": "notification.new",
+                    "notificationId": notif_id,
+                })
+            except Exception as exc:
+                logger.warning("Failed to create sale.ready notification: %s", exc)
+
         logger.info(f"Pricing pipeline success | event={event_id} | {time.perf_counter() - start:.2f}s")
 
     except Exception as exc:

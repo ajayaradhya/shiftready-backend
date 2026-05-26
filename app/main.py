@@ -6,7 +6,7 @@ from app.core.config import settings
 from app.core.logging import setup_logging
 from app.core.middleware import register_middleware
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import sales, marketplace, users, messages, sold
+from app.routers import sales, marketplace, users, messages, sold, notifications
 
 setup_logging()
 
@@ -38,6 +38,7 @@ app.include_router(sold.router, prefix="/api/v1", tags=["Sold Lifecycle"])
 app.include_router(marketplace.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(messages.router, prefix="/api/v1")
+app.include_router(notifications.router, prefix="/api/v1")
 
 _start_time = time.time()
 
