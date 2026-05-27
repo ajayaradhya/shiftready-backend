@@ -1,15 +1,18 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code (claude.ai/code) working in this repository.
 
 ## Project Overview
 
-**ShiftReady** is a full-stack application that automates residential relocation inventory management using Google Gemini AI.
+**ShiftReady** automates residential relocation inventory management using Google Gemini.
 
-- **Backend** (`shiftready-backend/`): FastAPI service orchestrating the pipeline: live capture / video intake → AI vision extraction → refinement → user review → AI pricing → marketplace publication. Deployed on Cloud Run (Sydney region), Firestore as DB, Firebase Auth.
-- **Frontend** (`../shiftready-ui/`): Next.js 16 / React 19 SPA, sibling directory to this repo. Launched with `--add-dir ../shiftready-ui` so both repos are editable in the same session.
+- **Backend** (`shiftready-backend/`, this repo): FastAPI on Cloud Run (`australia-southeast1`). Firestore (Native), GCS, Firebase Auth.
+- **Frontend** (`../shiftready-ui/`): Next.js 16 / React 19. Sibling directory; launch with `--add-dir ../shiftready-ui` so both repos are editable together.
 
-Always launch Claude from the backend directory with:
+Pipeline: live capture / video intake → AI extraction → user review → AI pricing → marketplace publish → buyer messaging → sold rollup.
+
+Always launch Claude from the backend directory:
+
 ```
 claude --add-dir ../shiftready-ui
 ```
@@ -17,127 +20,186 @@ claude --add-dir ../shiftready-ui
 ## Commands
 
 ```bash
-# Install dependencies
+# Install
 pip install -r requirements.txt
 
-# Run dev server
+# Dev server
 uvicorn app.main:app --reload --port 8080
 
 # Lint
 ruff check . --exclude scripts
 
-# Run all tests with coverage
+# Tests
 pytest --cov=app --cov-report=term-missing
-
-# Run a single test file
 pytest tests/test_sales.py -v
-
-# Run a single test
 pytest tests/test_sales.py::test_function_name -v
+pytest tests/integration/ -v
 ```
 
-API docs available at `http://localhost:8080/docs` when running locally.
+Swagger UI: `http://localhost:8080/docs`.
 
 ## Architecture
 
-### Core Services (`app/services/`)
+### Layered Design
 
-All business logic lives here. Routers are thin orchestrators — they call services and return responses.
+```
+Routers (app/routers/)      ← thin: validate, call service, return
+   ↓
+Services (app/services/)    ← business logic; compose repos + AI
+   ↓
+AI (app/ai/)                ← Gemini calls, Pydantic schemas
+   ↓
+Repos (app/repos/)          ← only code that touches Firestore directly
+   ↓
+Firestore / GCS / Gemini
+```
 
-- **`firestore.py`** — Firestore facade. Delegates to repo layer (`app/repos/`): `sale_repo`, `bundle_repo`, `item_repo`, `marketplace_repo`, `user_repo`. Hierarchical structure: `saleEvents/{id}/bundles/{id}/items/{id}`. Async throughout; sub-collection deletes require manual cleanup (no cascading).
-- **`gemini.py`** — `GeminiProcessor` facade wrapping `ExtractionService` (in `app/ai/extraction.py`) and `PricingService` (in `app/ai/pricing.py`). Public methods: `process_walkthrough`, `process_frames`, `identify_single_frame`, `refine_captured_items`, `estimate_listing_prices`. Uses Pydantic schemas + `response_mime_type="application/json"` for deterministic structured output.
-- **`pipelines.py`** — Background async tasks with exponential retry and FAILED status fallback:
-  - `run_extraction_pipeline` — video → Gemini → bundles/items → `READY_FOR_REVIEW`
-  - `run_frames_extraction_pipeline` — batch JPEG frames → Gemini → bundles/items
-  - `run_capture_refinement_pipeline` — Phase 2 live capture: accepts pre-analyzed `CapturedItemInput` list, runs one text-only Gemini refinement call (dedup + room grouping), writes bundles/items to Firestore, then hands off to pricing. No re-extraction — items already analyzed per-frame during capture.
-  - `run_pricing_pipeline` — full summary → Gemini pricing → updates `predicted_listing_price` + `actual_listing_price` → `READY_FOR_REVIEW`
-  - `run_append_extraction_pipeline` — appends new bundles from a second video without clearing existing data
-- **`auth.py`** — Firebase ID token validation. Tokens prefixed with `dev_` bypass verification when `K_SERVICE` env var is absent (local dev only).
-- **`notifier.py`** — WebSocket `ConnectionManager` for real-time status updates during processing.
+**Layering rules — non-negotiable:**
 
-Global service singletons are initialized in `services/__init__.py`.
+- Routers do not touch Firestore. Always go through a service → repo.
+- AI output must be validated against a Pydantic schema before persisting.
+- All I/O is `await`ed. Never use synchronous `requests` in handlers.
+
+### Routers (`app/routers/`)
+
+- **`sales.py`** — inventory, capture (frame + finalize-v2), append, status, summary, WebSocket, publish/unpublish, bundle/item/image CRUD.
+- **`marketplace.py`** — public anonymous browse; seller PII masked.
+- **`messages.py`** — buyer-seller threads, structured offers, accept (→ reserves item).
+- **`notifications.py`** — in-app notification feed.
+- **`sold.py`** — mark sold at item/bundle/sale granularity; drives `PARTIALLY_SOLD` / `SOLD` rollup.
+- **`users.py`** — profile, username, phone.
+
+### Services (`app/services/`)
+
+- **`firestore.py`** — Firestore facade. Composes `app/repos/`: `sale_repo`, `bundle_repo`, `item_repo`, `marketplace_repo`, `user_repo`, `conversation_repo`, `notification_repo`, `transaction_repo`. Sub-collection deletes are NOT cascading — clean manually.
+- **`gemini.py`** — `GeminiProcessor` facade wrapping `ExtractionService` + `PricingService`. Public methods:
+  - `process_walkthrough` — full video extraction
+  - `process_frames` — batch JPEG frames
+  - `identify_single_frame` — lightweight per-frame identify (live capture)
+  - `refine_captured_items` — text-only dedup + room grouping
+  - `estimate_listing_prices` — urgency-weighted pricing
+- **`pipelines.py`** — background async tasks; exponential retry; `FAILED` fallback:
+  - `run_extraction_pipeline` — video → bundles/items → `READY_FOR_REVIEW`
+  - `run_frames_extraction_pipeline` — batch JPEG frames → bundles/items
+  - `run_capture_refinement_pipeline` — Phase 2 live: accept `CapturedItemInput[]`, one text-only Gemini refinement, write, kick pricing
+  - `run_pricing_pipeline` — summary → Gemini pricing → updates `predicted_listing_price` + `actual_listing_price`
+  - `run_append_extraction_pipeline` — append new bundles without clearing
+- **`auth.py`** — Firebase ID token validation. `dev_` prefix bypasses verification when `K_SERVICE` is absent (local only).
+- **`notifier.py`** — WebSocket `ConnectionManager` for pipeline + message events.
+- **`messaging.py`** — conversation + offer logic; structured message types (text, offer, counter, accept).
+- **`inventory_lifecycle.py`** — sold-state machine; rolls item/bundle sold flags up to sale `PARTIALLY_SOLD` / `SOLD`.
+- **`permissions.py`** — resource-level auth helpers; `validate_sale_owner`.
+- **`jobs.py`** — triggers the `frame_extractor` Cloud Run Job.
+
+Global service singletons initialized in `services/__init__.py`.
 
 ### AI Layer (`app/ai/`)
 
-- **`extraction.py`** — `ExtractionService`:
-  - `process_walkthrough(gcs_uri)` — full video extraction
-  - `process_frames(gcs_uris)` — batch JPEG frames → room bundles
-  - `identify_single_frame(gcs_uri)` — lightweight per-frame identify (name/brand/price only); used during live capture at confirm time
-  - `refine_captured_items(items)` — text-only Gemini call; groups pre-analyzed items into room bundles using index-based assignment, deduplicates; returns `[{bundle_name, item_indices[]}]`
-- **`pricing.py`** — `PricingService.estimate_listing_prices()` — urgency discount based on days until move-out
-- **`schemas.py`** — AI output schemas: `SingleFrameResult`, `PricingList`, `PricingResult`, `RefinementGrouping`, `RefinementResult`
-- **`schema_utils.py`** — `get_clean_schema()`: converts Pydantic → Gemini-compatible JSON schema (inlines `$ref`, strips null branches, removes backend-managed fields like `actual_*` prices)
-- **`client.py`** — Gemini client factory, `MODEL_ID`, `SYSTEM_INSTRUCTION`
+- **`extraction.py`** — `ExtractionService` (walkthrough, frames, single-frame identify, refinement).
+- **`pricing.py`** — `PricingService.estimate_listing_prices()` with urgency discount based on days-until-move-out.
+- **`schemas.py`** — `SingleFrameResult`, `PricingList`, `PricingResult`, `RefinementGrouping`, `RefinementResult`.
+- **`schema_utils.py`** — `get_clean_schema()`: Pydantic → Gemini-compatible JSON schema (inlines `$ref`, strips null branches, removes backend-managed fields like `actual_*`).
+- **`client.py`** — Gemini client factory, `MODEL_ID`, `SYSTEM_INSTRUCTION`.
 
-### Sale Lifecycle (State Machine)
+Every Gemini call logs `prompt_token_count`, `candidates_token_count`, `finish_reason`.
+
+### Repos (`app/repos/`)
+
+One repo per Firestore collection. **All direct document access goes here.** Don't bypass `firestore.py` in routers.
+
+Repos: `sale_repo`, `bundle_repo`, `item_repo`, `marketplace_repo`, `user_repo`, `conversation_repo`, `notification_repo`, `transaction_repo`.
+
+### Core (`app/core/`)
+
+- `config.py` — `pydantic-settings`
+- `deps.py` — FastAPI dependency injectors
+- `logging.py` — structured JSON logging
+- `middleware.py` — request middleware
+
+## Sale Lifecycle (State Machine)
 
 ```
 PENDING_UPLOAD → PROCESSING → READY_FOR_REVIEW → PRICING_IN_PROGRESS → LIVE → ARCHIVED
 ```
 
-Terminal states: `PARTIALLY_SOLD`, `EXPIRED`, `FAILED`, `ARCHIVED`. Status transitions are logged to a `statusHistory` array on the sale document using `firestore.ArrayUnion`.
+Terminal / branch states: `PARTIALLY_SOLD`, `SOLD`, `EXPIRED`, `FAILED`, `ARCHIVED`.
 
-### Live Capture Flow (Phase 2)
+Every transition appends to `statusHistory` (array via `firestore.ArrayUnion`).
+
+## Live Capture Flow (Phase 2)
 
 ```
-[Camera] → MediaPipe (on-device, WASM) → user confirms item
+[Camera] → tap-first user confirm
     → POST /sales/{id}/capture/frame
-    → Gemini single-frame identify → name/brand/price/gcs_uri returned immediately
+    → Gemini single-frame identify → name/brand/price/gcs_uri returned
     → user reviews all items in ItemReviewScreen
-    → POST /sales/{id}/capture/finalize-v2  (sends pre-analyzed items)
+    → POST /sales/{id}/capture/finalize-v2 (sends pre-analyzed items)
     → run_capture_refinement_pipeline:
-        1. Status → PROCESSING
-        2. Gemini refinement call (text-only): dedup + room grouping by item index
-        3. Write bundles/items to Firestore (frame GCS URI as cover image per item)
-        4. Status → READY_FOR_REVIEW + WS notify
-        5. Status → PRICING_IN_PROGRESS
-        6. run_pricing_pipeline → Status → READY_FOR_REVIEW (final)
+        1. status → PROCESSING
+        2. Gemini refinement (text-only): dedup + grouping by item index
+        3. Write bundles/items (frame GCS URI as cover image)
+        4. status → READY_FOR_REVIEW (WS notify)
+        5. status → PRICING_IN_PROGRESS
+        6. run_pricing_pipeline → status → READY_FOR_REVIEW (final)
 ```
 
-Key constraint: per-frame extraction already done client-side. `finalize-v2` does NOT re-extract. One refinement Gemini call total at finalize.
+**Key constraint:** per-frame extraction already done client-side. `finalize-v2` does NOT re-extract. One refinement Gemini call at finalize.
 
-### Firestore Schema
+## Firestore Schema
 
 ```
 saleEvents/{eventId}
-  ├── metadata (status, sellerId, videoUrl, captureMode, timestamps)
+  ├── metadata (status, sellerId, videoUrl, captureMode, timestamps, statusHistory)
   ├── bundles/{bundleId}
   │   └── items/{itemId}
   │       ├── predicted_*/actual_* price fields
+  │       ├── sale_status (AVAILABLE | RESERVED | SOLD)
   │       ├── pricing_reasoning
   │       └── images[{id, gcs_path, source, is_cover, uploaded_at}]
+  ├── conversations/{conversationId}    # buyer-seller threads
+  │   └── messages/{messageId}          # text · offer · counter · accept
+  └── transactions/{transactionId}      # on offer accept
+
 users/{userId}
+notifications/{userId}/{notificationId}
 ```
 
-`captureMode: "live" | "frames" | "batch"` set on sale at pipeline completion.
-Item image `source` values: `"frame_extract"` (from live/frames capture), `"user_upload"` (manual upload in inventory cockpit).
+- `captureMode: "live" | "frames" | "batch"` — set at pipeline completion.
+- Item image `source`: `"frame_extract"` (capture) or `"user_upload"` (manual upload in cockpit).
 
-### Authentication
+## Authentication
 
-- All protected endpoints require Firebase ID token as `Authorization: Bearer <token>`
-- WebSocket auth via query param `?token=<token>`
-- `validate_sale_owner` enforces resource-level ownership checks
-- Marketplace endpoints allow anonymous browsing; seller details masked from non-owners
+- Protected REST endpoints: `Authorization: Bearer <token>`.
+- WebSocket: token in query `?token=<token>`.
+- `validate_sale_owner` for sale-level resource access.
+- Marketplace endpoints anonymous; seller email/phone masked from non-owners.
+- **Local bypass:** `dev_*` tokens skip Firebase verification when `K_SERVICE` is absent. Active only outside Cloud Run.
 
-### GCS Signed URLs
+## GCS Signed URLs
 
-Never expose raw GCS paths to the frontend. Always generate signed URLs via `app/utils/gcs.py` — PUT URLs expire in 15 min, GET URLs in 1 hour.
+**Never expose raw GCS paths to the frontend.** Use `app/utils/gcs.py`:
+
+- PUT URLs: 15 min
+- GET URLs: 1 hour
+
+Path conventions:
+
 - Capture frames: `captures/{eventId}/{frameId}.jpg`
 - Item user-uploads: `sales/{eventId}/items/{itemId}/{imageId}.jpg`
 - Videos: `{userId}/{filename}`
 
 ## Key Conventions
 
-- **Async-first**: All I/O (Firestore, GCS, Gemini) must be `await`ed. Never use synchronous `requests` in request handlers.
-- **Python 3.13+**: Use modern type hints (`dict[str, Any]`, not `Dict[str, Any]`).
-- **Routers must have `response_model`**: No bare untyped responses.
-- **AI output must be validated** against Pydantic schemas before persisting to Firestore.
-- **Log AI metadata** (tokens, finish_reason) on every Gemini call.
-- **Repos layer**: all direct Firestore document access goes through `app/repos/`. The `firestore.py` service composes repos — don't bypass it in routers.
+- **Async-first.** All I/O awaited.
+- **Python 3.13+.** Modern type hints (`dict[str, Any]`, not `Dict[str, Any]`).
+- **Routers must declare `response_model`.** No bare untyped responses.
+- **Validate AI output** with a Pydantic schema before Firestore writes.
+- **Log AI metadata** on every Gemini call.
+- **Single source of Firestore truth.** All document access through `app/repos/`.
 
 ## Environment Variables
 
-Required (see `.env.example`):
+See `.env.example`:
 
 ```
 GCP_PROJECT_ID
@@ -151,138 +213,31 @@ GOOGLE_APPLICATION_CREDENTIALS=./shiftready-backend-service-account.json
 
 ## CI/CD
 
-`cloudbuild.yaml` runs on push to `master`: lint → Docker build → push to Artifact Registry → Firestore index deploy → deploy backend to Cloud Run (`australia-southeast1`) → build + deploy frame-extractor Cloud Run Job (`jobs/frame_extractor/`).
+`cloudbuild.yaml` runs on push to `master`:
 
-## Additional Docs
+1. `ruff check .` (excludes `scripts/`)
+2. Docker build with layer cache from previous `:latest`
+3. Push `:SHORT_SHA` + `:latest` to Artifact Registry
+4. Deploy Firestore indexes
+5. Deploy backend to Cloud Run (`australia-southeast1`, unauthenticated)
+6. Build + deploy `frame_extractor` Cloud Run Job
 
-- `GEMINI.md` — Gemini/Vertex AI setup, prompt engineering, schema strategies
-- `FRONTEND_AUTH_INTEGRATION.md` — Firebase Client SDK setup and WebSocket auth patterns
+Machine `E2_HIGHCPU_8`, timeout 1200s.
 
 ---
 
-## Frontend (shiftready-ui)
+## Frontend Quick Reference
 
-Next.js 16.2.4 · React 19 · TypeScript · TanStack Query v5 · Tailwind v4 · lucide-react · clsx · tailwind-merge · Firebase 12 · MediaPipe tasks-vision · Radix UI · react-hook-form + zod · sonner
+Full details in `../shiftready-ui/CLAUDE.md`.
 
-### Directory Structure
+- Next.js 16 App Router · React 19 · TypeScript · Tailwind v4 (`@theme {}` block) · TanStack Query v5 · Radix · lucide-react · sonner · Firebase 12 · cmdk.
+- Layout groups: `(auth)` · `(sellers)` · `(market)` · `(public)`.
+- Shell: `components/shell/` — header, icon-rail sidebar, command palette, notifications panel, profile menu, bottom tab bar.
+- All API calls live in `src/lib/api.ts`. Single `apiRequest<T>` wrapper.
+- Dark-only. `pl-64` + `pt-16` is a layout invariant for authenticated shell pages.
+- Live capture: tap-first, no on-device ML. Per-tap → `POST /capture/frame` → Gemini identify. Finalize → `POST /capture/finalize-v2` with pre-analyzed items.
 
-```
-src/
-├── app/                              # Next.js App Router pages
-│   ├── layout.tsx                    # Root layout: Providers + Sidebar + Header
-│   ├── page.tsx                      # Home / public browse
-│   ├── (auth)/                       # login, register
-│   ├── (sellers)/                    # Authenticated seller routes
-│   │   ├── create/page.tsx           # Legacy video upload + sale init
-│   │   ├── dashboard/page.tsx        # Sales list
-│   │   └── seller-central/
-│   │       ├── page.tsx              # Seller hub
-│   │       ├── capture/page.tsx      # Live capture (primary flow)
-│   │       ├── live-stream/page.tsx  # Live stream
-│   │       ├── create/page.tsx       # Upload entry
-│   │       └── inventory/[eventId]/page.tsx  # Inventory review cockpit
-│   └── (public)/
-│       └── sale/[eventId]/page.tsx   # Public sale detail
-├── components/
-│   ├── providers.tsx                 # QueryClientProvider + ReactQueryDevtools
-│   ├── ui/
-│   │   ├── sidebar.tsx               # Fixed left nav (w-64), collapses on mobile
-│   │   └── header.tsx                # Fixed top bar (h-16)
-│   └── features/
-│       ├── capture/                  # CaptureStage, CaptureBucket, ItemConfirmCard,
-│       │                             # CapturePermissionsGate, CaptureControls, CaptureOverlay,
-│       │                             # ItemReviewScreen, FinalizeCaptureDialog
-│       ├── create/                   # upload-screen, processing-screen (batch+live modes),
-│       │                             # video-uploader, how-to, step-header, upload-progress-bar
-│       ├── inventory/                # inventory-card, card-pricing-grid, video-panel,
-│       │                             # loading-overlay, bundle-section, inventory-actions,
-│       │                             # AppendVideoModal
-│       ├── seller-central/           # sale-row, bundle-card, item-card-v2, item-photo-strip
-│       ├── dashboard/                # sale-card
-│       └── marketplace/              # marketplace-item-card, bundle-card
-├── hooks/
-│   ├── use-auth.ts
-│   ├── use-sales.ts
-│   ├── use-upload.ts
-│   ├── use-append-upload.ts
-│   ├── use-websocket.ts
-│   └── use-landing.ts
-└── lib/
-    ├── api.ts                        # Centralized fetch wrapper; all API calls live here
-    ├── types.ts                      # InventoryItem, RoomBundle, SaleSummary interfaces
-    ├── firebase.ts                   # Firebase client init
-    ├── schemas.ts                    # Zod schemas
-    ├── constants.ts
-    ├── utils.ts                      # cn() = clsx + tailwind-merge
-    └── capture/
-        ├── mediapipe-loader.ts       # Lazy-load WASM, init ObjectDetector
-        └── capture-types.ts          # CapturedItem, PendingDetection, CaptureToast, helpers
-```
+## Additional Docs
 
-### Live Capture Flow (Primary)
-
-1. `/seller-central/capture` → `CapturePermissionsGate` (camera required, mic optional)
-2. `CaptureStage` — live `getUserMedia` feed + MediaPipe ObjectDetector (WASM, on-device, ~5MB lazy-loaded)
-3. Per detection: `ItemConfirmCard` prompt → user confirms → `captureFrame(eventId, file)` → `POST /capture/frame` → Gemini single-frame → `name/brand/price/gcs_uri` stored on `CapturedItem`
-4. "Finish" → `ItemReviewScreen` → review/remove items → "Upload & Process"
-5. `handleProcess()` → `finalizeCaptureV2(eventId, analyzedItems)` → `POST /capture/finalize-v2`
-6. `ProcessingScreen` with `mode="live"` — shows real items with `frameSrc` thumbnails + "Pricing…" status
-7. Polls `getStatus()` every 3s → redirects to `/seller-central/inventory/${eventId}`
-
-### ProcessingScreen Modes
-
-- `mode="batch"` (default): animated fake item ticker + animated orb; used for video upload where items aren't known yet
-- `mode="live"`: real `capturedItems` shown with `frameSrc` thumbnails, names, brands, pricing status; no fake ticker
-
-### Adding a New Page
-
-1. Create `src/app/<route>/page.tsx` (App Router — no `pages/` directory).
-2. Add API calls to `src/lib/api.ts` following the existing pattern.
-3. Add TypeScript types to `src/lib/types.ts`.
-4. Create a hook in `src/hooks/` using TanStack Query if the page needs data fetching.
-
-### API Client (`src/lib/api.ts`)
-
-- Base URL from `NEXT_PUBLIC_API_URL`; falls back to the Cloud Run URL.
-- Module-level `_idToken` set by AuthProvider; auto-injected into all requests.
-- Central `apiRequest<T>()` wrapper handles errors (parses FastAPI's `detail` field) and 204 No Content.
-- All paths follow: `` `${API_BASE}/sales/${eventId}/...` ``
-
-### TanStack Query Conventions
-
-- `QueryClient` instantiated once in `providers.tsx` with default config.
-- Polling conditional — 1500 ms only during `processing` or `pricing_in_progress` states.
-- All mutations call `queryClient.invalidateQueries` on success.
-- `staleTime: 5 * 60 * 1000` for data that doesn't change during AI processing.
-
-### Design System
-
-- **Dark-only** — `<html className="dark">` hardcoded; no light mode.
-- **Tailwind v4** — config in `src/app/globals.css` via `@theme {}`, not `tailwind.config.js`.
-- **Layout**: main content has `pl-64` (sidebar) + `pt-16` (header) — don't override on new pages.
-- **Key CSS variables**:
-  - `bg-surface`, `bg-surface-container-low/high/lowest/highest`
-  - `text-on-surface`, `text-on-surface-variant`
-  - `text-primary` (#adc6ff electric blue), `text-tertiary` (#4edea3 green for pricing)
-  - `border-outline`, `border-outline-variant`
-- **Icons**: lucide-react only — do not introduce other icon libraries.
-- **Class merging**: `cn()` from `lib/utils.ts` (clsx + tailwind-merge) for conditional classes.
-
-### Frontend Commands
-
-```bash
-# Run dev server (from shiftready-ui directory)
-npm run dev        # starts on http://localhost:3000
-
-# Lint
-npm run lint
-
-# Build
-npm run build
-```
-
-### Environment Variables (UI)
-
-```
-NEXT_PUBLIC_API_URL=http://localhost:8080   # point to local backend during dev
-```
+- `README.md` — production-facing documentation
+- `../shiftready-ui/CLAUDE.md` — frontend AI-pairing guide
