@@ -87,10 +87,6 @@ flowchart LR
         Notify["WebSocket\nConnectionManager"]
     end
 
-    subgraph Jobs["Cloud Run Job"]
-        FrameExtract["frame_extractor\n(ffmpeg → JPEG)"]
-    end
-
     subgraph GCP["Google Cloud"]
         Firestore[("Firestore\nsaleEvents/{id}/bundles/items")]
         GCS[("Cloud Storage\nvideos · frames · item images")]
@@ -134,7 +130,6 @@ flowchart TB
         S6[messaging.py]
         S7[inventory_lifecycle.py]
         S8[permissions.py]
-        S9[jobs.py]
     end
 
     subgraph L3["AI · app/ai/"]
@@ -228,7 +223,6 @@ sequenceDiagram
     participant UI as Next.js UI
     participant API as FastAPI
     participant GCS as Cloud Storage
-    participant Job as frame_extractor Job
     participant AI as Gemini Flash
     participant FS as Firestore
 
@@ -311,7 +305,7 @@ stateDiagram-v2
 | Auth | Firebase Admin SDK |
 | Real-time | Native FastAPI WebSockets |
 | Validation | Pydantic v2 + `pydantic-settings` |
-| Background jobs | `BackgroundTasks` + separate Cloud Run Job (`jobs/frame_extractor/`) |
+| Background jobs | `BackgroundTasks` (FastAPI async) |
 | Tests | pytest + pytest-asyncio + pytest-cov |
 | Lint | Ruff |
 | Deployment | Cloud Run · Cloud Build · Artifact Registry (`australia-southeast1`) |
@@ -405,8 +399,7 @@ shiftready-backend/
 │   │   ├── notifier.py          # WebSocket ConnectionManager
 │   │   ├── messaging.py         # Conversation + offer logic
 │   │   ├── inventory_lifecycle.py  # Sold-state machine
-│   │   ├── permissions.py       # Resource-level auth helpers
-│   │   └── jobs.py              # Cloud Run Job triggers
+│   │   └── permissions.py       # Resource-level auth helpers
 │   ├── ai/
 │   │   ├── extraction.py        # ExtractionService (walkthrough, frames, single-frame, refinement)
 │   │   ├── pricing.py           # PricingService (urgency-weighted)
@@ -418,8 +411,6 @@ shiftready-backend/
 │   ├── core/                    # config · deps · logging · middleware
 │   ├── domain/                  # Enums (SaleStatus, etc.)
 │   └── utils/                   # GCS helpers, signed URLs
-├── jobs/
-│   └── frame_extractor/         # Cloud Run Job: video → JPEG frames
 ├── tests/
 │   ├── test_api.py
 │   ├── test_pipelines.py
@@ -565,8 +556,6 @@ flowchart LR
     Build --> Push[Push to Artifact Registry\n:SHORT_SHA + :latest]
     Push --> Idx[Deploy Firestore indexes]
     Idx --> Run[Deploy to Cloud Run\naustralia-southeast1]
-    Run --> JobBuild[Build frame_extractor image]
-    JobBuild --> JobDeploy[Deploy Cloud Run Job]
 ```
 
 `cloudbuild.yaml` runs on every push to `master` with machine `E2_HIGHCPU_8`, timeout 1200s. Cloud Run service is deployed unauthenticated (Firebase Auth handles user-level access in-app).

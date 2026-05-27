@@ -101,61 +101,9 @@ steps:
       - 'managed'
       - '--allow-unauthenticated'
 
-  # 8. Pull frame-extractor image for layer caching
-  - name: 'gcr.io/cloud-builders/docker'
-    id: 'pull-frame-extractor-cache'
-    waitFor: ['deploy']
-    entrypoint: 'bash'
-    args: ['-c', 'docker pull ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_FRAME_JOB_IMAGE}:latest || exit 0']
-
-  # 9. Build frame-extractor job image
-  - name: 'gcr.io/cloud-builders/docker'
-    id: 'build-frame-extractor'
-    waitFor: ['pull-frame-extractor-cache']
-    args: [
-      'build',
-      '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_FRAME_JOB_IMAGE}:$SHORT_SHA',
-      '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_FRAME_JOB_IMAGE}:latest',
-      '--cache-from', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_FRAME_JOB_IMAGE}:latest',
-      '-f', 'jobs/frame_extractor/Dockerfile',
-      'jobs/frame_extractor',
-    ]
-
-  # 10. Push frame-extractor image
-  - name: 'gcr.io/cloud-builders/docker'
-    id: 'push-frame-extractor'
-    waitFor: ['build-frame-extractor']
-    args: ['push', '--all-tags', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_FRAME_JOB_IMAGE}']
-
-  # 11. Create or update Cloud Run Job
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    id: 'deploy-frame-extractor-job'
-    waitFor: ['push-frame-extractor']
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |
-        IMAGE="${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_FRAME_JOB_IMAGE}:$SHORT_SHA"
-        JOB_ARGS="--image=$$IMAGE \
-          --region=${_REGION} \
-          --service-account=${_JOB_SERVICE_ACCOUNT} \
-          --set-env-vars=GCP_PROJECT_ID=$PROJECT_ID,GCP_UPLOAD_BUCKET=${_UPLOAD_BUCKET} \
-          --memory=2Gi \
-          --cpu=2 \
-          --max-retries=2 \
-          --task-timeout=3600"
-
-        if gcloud run jobs describe ${_FRAME_JOB_NAME} --region=${_REGION} --project=$PROJECT_ID 2>/dev/null; then
-          gcloud run jobs update ${_FRAME_JOB_NAME} $$JOB_ARGS
-        else
-          gcloud run jobs create ${_FRAME_JOB_NAME} $$JOB_ARGS
-        fi
-
 images:
   - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE_NAME}:$SHORT_SHA'
   - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE_NAME}:latest'
-  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_FRAME_JOB_IMAGE}:$SHORT_SHA'
-  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_FRAME_JOB_IMAGE}:latest'
 
 options:
   logging: CLOUD_LOGGING_ONLY
@@ -165,7 +113,4 @@ substitutions:
   _SERVICE_NAME: shiftready-backend
   _REPOSITORY: shiftready-repo
   _IMAGE_NAME: backend-image
-  _FRAME_JOB_IMAGE: frame-extractor-image
-  _FRAME_JOB_NAME: frame-extractor
-  _JOB_SERVICE_ACCOUNT: shiftready-backend@$PROJECT_ID.iam.gserviceaccount.com
   _UPLOAD_BUCKET: shiftready-uploads

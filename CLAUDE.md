@@ -89,7 +89,6 @@ Firestore / GCS / Gemini
 - **`messaging.py`** — conversation + offer logic; structured message types (text, offer, counter, accept).
 - **`inventory_lifecycle.py`** — sold-state machine; rolls item/bundle sold flags up to sale `PARTIALLY_SOLD` / `SOLD`.
 - **`permissions.py`** — resource-level auth helpers; `validate_sale_owner`.
-- **`jobs.py`** — triggers the `frame_extractor` Cloud Run Job.
 
 Global service singletons initialized in `services/__init__.py`.
 
@@ -220,7 +219,6 @@ GOOGLE_APPLICATION_CREDENTIALS=./shiftready-backend-service-account.json
 3. Push `:SHORT_SHA` + `:latest` to Artifact Registry
 4. Deploy Firestore indexes
 5. Deploy backend to Cloud Run (`australia-southeast1`, unauthenticated)
-6. Build + deploy `frame_extractor` Cloud Run Job
 
 Machine `E2_HIGHCPU_8`, timeout 1200s.
 
