@@ -14,7 +14,7 @@ from app.models.schemas import (
     CoverConfirmRequest, CoverFromItemRequest, CoverUploadUrlResponse,
     ImageConfirmRequest, ImageUploadUrlItem, ImageUploadUrlsRequest, ImageUploadUrlsResponse, ImageReorderRequest,
     ItemCreateRequest, ItemCreateResponse, ItemUpdate, ItemMoveRequest, ItemRepriceResponse,
-    SalePublishRequest, SaleUpdate,
+    SalePublishRequest, SaleUpdate, SuggestTitleRequest, SuggestTitleResponse,
     SaleStatusResponse, StatusResponse,
 )
 from app.services.permissions import assert_editable
@@ -67,17 +67,20 @@ async def capture_frame(
         name = result.get("name") or "Unidentified Item"
         brand = result.get("brand") or None
         price = float(result.get("predicted_original_price") or 0.0)
+        confidence = result.get("confidence") or "medium"
     except Exception as exc:
         logger.warning(f"Frame identification failed for {gcs_uri}: {exc}")
         name = "Unidentified Item"
         brand = None
         price = 0.0
+        confidence = "low"
 
     return CaptureFrameResponse(
         name=name,
         brand=brand,
         predicted_original_price=price,
         gcs_uri=gcs_uri,
+        confidence=confidence,
     )
 
 
@@ -97,8 +100,62 @@ async def finalize_capture_v2(
     """
     if not payload.items:
         raise HTTPException(status_code=400, detail="At least one item is required")
+    meta: dict = {"captureInput": [item.model_dump() for item in payload.items]}
+    if payload.sale_title and payload.sale_title.strip():
+        meta["title"] = payload.sale_title.strip()
+    await firestore.update_sale_metadata(event_id, meta)
     background_tasks.add_task(run_capture_refinement_pipeline, event_id, payload.items, firestore, gemini)
     return CaptureFinalizeV2Response(event_id=event_id, status="processing_started", item_count=len(payload.items))
+
+
+@router.post("/{event_id}/suggest-title", response_model=SuggestTitleResponse)
+async def suggest_sale_title(
+    event_id: str,
+    payload: SuggestTitleRequest,
+    gemini: GeminiDep,
+    _: dict = Depends(validate_sale_owner),
+):
+    """
+    Text-only Gemini call: given item names, suggest a sale title.
+    Path: POST /api/v1/sales/{event_id}/suggest-title
+    """
+    if not payload.item_names:
+        raise HTTPException(status_code=400, detail="item_names required")
+    title = await gemini.suggest_sale_title(payload.item_names)
+    return SuggestTitleResponse(title=title)
+
+
+@router.post("/{event_id}/retry-finalize", response_model=CaptureFinalizeV2Response)
+async def retry_finalize(
+    event_id: str,
+    background_tasks: BackgroundTasks,
+    firestore: FirestoreDep,
+    gemini: GeminiDep,
+    sale: dict = Depends(validate_sale_owner),
+):
+    """
+    Re-run capture refinement pipeline using stored captureInput payload.
+    Clears existing bundles first. Only valid for FAILED sales.
+    Path: POST /api/v1/sales/{event_id}/retry-finalize
+    """
+    if sale.get("status") != "failed":
+        raise HTTPException(status_code=409, detail="Sale must be in failed state to retry")
+
+    raw_items = sale.get("captureInput")
+    if not raw_items:
+        raise HTTPException(status_code=422, detail="No stored capture input found — cannot retry")
+
+    from app.models.schemas import CapturedItemInput
+    items = [CapturedItemInput(**i) for i in raw_items]
+
+    # Clear existing bundles from failed run
+    summary = await firestore.get_full_event_summary(event_id)
+    if summary:
+        for bundle in summary.get("bundles", []):
+            await firestore.delete_bundle(event_id, bundle["id"])
+
+    background_tasks.add_task(run_capture_refinement_pipeline, event_id, items, firestore, gemini)
+    return CaptureFinalizeV2Response(event_id=event_id, status="processing_started", item_count=len(items))
 
 
 @router.get("/", response_model=list[SaleStatusResponse])

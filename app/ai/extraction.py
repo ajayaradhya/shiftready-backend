@@ -11,27 +11,52 @@ from app.models.inventory import RoomBundle
 
 logger = logging.getLogger(__name__)
 
-_REFINEMENT_PROMPT = """You are organizing household items into room bundles for a home relocation sale.
+_REFINEMENT_PROMPT = """You are organizing household items into bundles for a home relocation sale.
 
-You receive a JSON array of items, each with an index (idx), name, brand, and estimated price.
+You receive a JSON array of items, each with: idx (index), name, brand, price, and name_source ("user" or "ai").
+
 Your job:
-1. GROUPING: Assign each item to exactly one room bundle. Use clear room names: Living Room, Bedroom, Kitchen, Bathroom, Home Office, Outdoor, or General.
-   Infer room from item type: sofa/tv/rug/couch → Living Room, bed/wardrobe/dresser → Bedroom, fridge/oven/microwave → Kitchen, desk/monitor/computer → Home Office.
-2. DEDUPLICATION: If two items are clearly the same object captured twice (same category, very similar name), include only the lower index. Exclude the duplicate entirely.
-3. COVERAGE: Every item index must appear in exactly one bundle, unless it is a confirmed duplicate.
+1. GROUPING: Assign each item to exactly one bundle by functional category similarity.
+   Examples: "Study & Office" (desk, monitor, books, lamp), "Artifacts & Decor" (vases, frames, sculptures),
+   "Kitchen Gear" (appliances, cookware), "Bedding & Linens" (sheets, pillows, blankets),
+   "Tech & Electronics" (TVs, speakers, cables), "Furniture — Seating" (sofas, chairs),
+   "Furniture — Storage" (wardrobes, shelves). Use whichever bundle names best fit the items.
+   Aim for 2–6 items per bundle. Single-item bundles are acceptable.
+2. NAMES: When name_source is "user", treat that item's name as authoritative — do not rename or merge it.
+3. COVERAGE: Every item index must appear in exactly one bundle. Do not drop any items.
 
-Return the bundle groupings only. Do not modify item names or prices.
+Return bundle groupings only. Do not modify item names or prices.
 """
 
 _SINGLE_FRAME_PROMPT = """You are analyzing a photo of a single household item for a home relocation sale.
 
-Identify the main item and extract exactly three fields:
+Identify the main item and extract exactly four fields:
 - name: descriptive common name (e.g. "Armchair", "Samsung 65\" TV", "Coffee Table")
 - brand: visible brand or manufacturer; return "Unknown" if not determinable from the image
 - predicted_original_price: estimated original retail price in AUD when purchased new
+- confidence: your identification confidence level
+  - "low": image is blurry, partially occluded, too dark, or multiple competing items make main item unclear
+  - "medium": main category is clear but specific model, brand, or price is uncertain
+  - "high": item is clearly visible, well-lit, and you can identify it with high certainty
 
 Focus only on the primary item in the frame. Be concise and realistic with pricing.
+
+Examples:
+- Clear well-lit sofa with visible brand tag → confidence: "high"
+- Blurry photo of what looks like a lamp → confidence: "low"
+- Obviously a monitor but brand/size unclear → confidence: "medium"
 """
+
+_SUGGEST_TITLE_PROMPT = """Generate a concise moving sale title for the ShiftReady marketplace.
+Items: {item_names}
+
+Rules:
+- Max 60 characters
+- No quotes around the result
+- Format like: "12-item Newtown moving sale: study, kitchen & decor"
+- Be specific about item categories
+- Return ONLY the title string, nothing else"""
+
 
 _FRAMES_PROMPT = """
 You are analyzing photos of household items for a home relocation sale.
@@ -279,5 +304,18 @@ class ExtractionService:
         else:
             result = {"name": str(parsed), "brand": "Unknown", "predicted_original_price": 0.0}
 
-        logger.info(f"Single frame identified | name={result.get('name')} | brand={result.get('brand')} | tokens={usage}")
+        result.setdefault("confidence", "medium")
+        logger.info(f"Single frame identified | name={result.get('name')} | confidence={result.get('confidence')} | tokens={usage}")
         return result
+
+    async def suggest_sale_title(self, item_names: list[str]) -> str:
+        prompt = _SUGGEST_TITLE_PROMPT.format(item_names=", ".join(item_names[:20]))
+        response = await asyncio.to_thread(
+            self._client.models.generate_content,
+            model=self._model,
+            contents=prompt,
+        )
+        title = (response.text or "").strip().strip('"').strip("'")
+        usage = response.usage_metadata.total_token_count if hasattr(response, "usage_metadata") else "n/a"
+        logger.info(f"Sale title suggested | title={title!r} | tokens={usage}")
+        return title

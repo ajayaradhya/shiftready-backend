@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     port: int = 8080
 
     # Gemini / Vertex AI
-    gemini_model_id: str = "gemini-3.1-flash-lite-preview"
+    gemini_model_id: str = "gemini-3.1-flash-lite"
     gemini_location: str = "global"
 
     google_application_credentials: str = ""

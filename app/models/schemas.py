@@ -18,24 +18,36 @@ class CaptureFrameResponse(BaseModel):
     brand: Optional[str] = None
     predicted_original_price: float
     gcs_uri: str
+    confidence: Literal["high", "medium", "low"] = "medium"
 
 
 class CapturedItemInput(BaseModel):
     temp_id: str
-    name: str
+    name: str | None = None
     brand: str | None = None
     predicted_original_price: float | None = None
     gcs_uri: str
+    needs_review: bool = False
+    name_source: Literal["ai", "user"] = "ai"
 
 
 class CaptureFinalizeV2Request(BaseModel):
     items: list[CapturedItemInput]
+    sale_title: str | None = None
 
 
 class CaptureFinalizeV2Response(BaseModel):
     event_id: str
     status: str
     item_count: int
+
+
+class SuggestTitleResponse(BaseModel):
+    title: str
+
+
+class SuggestTitleRequest(BaseModel):
+    item_names: list[str]
 
 
 class PriceEstimationRequest(BaseModel):

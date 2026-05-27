@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -6,6 +8,9 @@ class SingleFrameResult(BaseModel):
     name: str = Field(description="Common descriptive name of the item (e.g. 'Armchair', 'Samsung TV')")
     brand: str = Field(description="Visible brand/manufacturer, or 'Unknown' if not determinable")
     predicted_original_price: float = Field(description="Estimated original retail price in AUD when new")
+    confidence: Literal["high", "medium", "low"] = Field(
+        description="Identification confidence: 'high' if item clearly visible and identified, 'medium' if category clear but model/brand uncertain, 'low' if image unclear, partially occluded, or multiple competing interpretations"
+    )
 
 
 class PricingResult(BaseModel):

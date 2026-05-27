@@ -39,3 +39,6 @@ class GeminiProcessor:
         self, items: list[dict[str, Any]], move_out_date: str
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         return await self._pricing.estimate_listing_prices(items, move_out_date)
+
+    async def suggest_sale_title(self, item_names: list[str]) -> str:
+        return await self._extraction.suggest_sale_title(item_names)
