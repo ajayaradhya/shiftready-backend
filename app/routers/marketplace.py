@@ -1,7 +1,7 @@
 import asyncio
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from app.core.deps import FirestoreDep, GCSDep
 from app.models.schemas import SaveToggleResponse
@@ -9,39 +9,104 @@ from app.services.auth import get_current_user, get_optional_user, User
 
 router = APIRouter(prefix="/marketplace", tags=["Marketplace"])
 
+_CDN_CACHE = "public, max-age=30, s-maxage=120, stale-while-revalidate=300"
+
+
+def _process_item(item: dict, gcs, user) -> dict:
+    image_url = None
+    images = item.get("images") or []
+    cover = next((img for img in images if img.get("is_cover")), images[0] if images else None)
+    if cover:
+        gcs_path = cover.get("gcs_path")
+        if gcs_path and gcs_path.startswith("gs://"):
+            try:
+                s = gcs_path.replace("gs://", "").split("/", 1)
+                image_url = gcs.generate_download_url(s[0], s[1])
+            except Exception:
+                pass
+    is_owner = user and item.get("sellerId") == user.id
+    return {
+        "id": item["id"],
+        "name": item.get("name", "Unknown Item"),
+        "brand": item.get("brand", "Generic"),
+        "condition": item.get("condition", "Good"),
+        "category": item.get("category"),
+        "price": item.get("actual_listing_price"),
+        "bundleName": item.get("bundleName"),
+        "eventId": item.get("eventId"),
+        "image_url": image_url,
+        "metadata": {
+            "year": item.get("actual_year_of_purchase") if user else None,
+            "originalPrice": item.get("actual_original_price") if user else None,
+            "confidence": item.get("confidence") if is_owner else None,
+        },
+    }
+
+
+def _process_sale(sale_raw: dict, gcs) -> dict:
+    sale = dict(sale_raw)
+    signed: list[str] = []
+    for path in sale.get("preview_images", []):
+        if path.startswith("gs://"):
+            try:
+                parts = path.replace("gs://", "").split("/", 1)
+                signed.append(gcs.generate_download_url(parts[0], parts[1]))
+            except Exception:
+                pass
+    sale["preview_images"] = signed
+    cover_gcs = sale.pop("cover_image_gcs", None)
+    if cover_gcs and cover_gcs.startswith("gs://"):
+        try:
+            parts = cover_gcs.replace("gs://", "").split("/", 1)
+            sale["cover_image_url"] = gcs.generate_download_url(parts[0], parts[1])
+        except Exception:
+            sale["cover_image_url"] = None
+    else:
+        sale["cover_image_url"] = None
+    return sale
+
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
+@router.get("/landing")
+async def get_landing(
+    firestore: FirestoreDep,
+    gcs: GCSDep,
+    response: Response,
+    suburb: str | None = Query(None),
+    user: User | None = Depends(get_optional_user),
+):
+    """Single-call landing endpoint: newest items + cheapest + active sales via asyncio.gather."""
+    if not user:
+        response.headers["Cache-Control"] = _CDN_CACHE
+
+    items_newest, items_cheapest, sales_raw = await asyncio.gather(
+        firestore.get_active_inventory(suburb=suburb, sort="newest"),
+        firestore.get_active_inventory(suburb=suburb, sort="price_asc"),
+        firestore.list_live_sales(),
+    )
+
+    return {
+        "items": [_process_item(i, gcs, user) for i in items_newest],
+        "cheapest": [_process_item(i, gcs, user) for i in items_cheapest],
+        "active_sales": [_process_sale(s, gcs) for s in sales_raw],
+    }
+
+
 @router.get("/sales")
-async def list_live_sales(firestore: FirestoreDep, gcs: GCSDep):
+async def list_live_sales(firestore: FirestoreDep, gcs: GCSDep, response: Response, user: User | None = Depends(get_optional_user)):
     """List all LIVE sales — used by the landing page sales scroll."""
+    if not user:
+        response.headers["Cache-Control"] = _CDN_CACHE
     sales = await firestore.list_live_sales()
-    for sale in sales:
-        signed: list[str] = []
-        for path in sale.get("preview_images", []):
-            if path.startswith("gs://"):
-                try:
-                    parts = path.replace("gs://", "").split("/", 1)
-                    signed.append(gcs.generate_download_url(parts[0], parts[1]))
-                except Exception:
-                    pass
-        sale["preview_images"] = signed
-        cover_gcs = sale.pop("cover_image_gcs", None)
-        if cover_gcs and cover_gcs.startswith("gs://"):
-            try:
-                parts = cover_gcs.replace("gs://", "").split("/", 1)
-                sale["cover_image_url"] = gcs.generate_download_url(parts[0], parts[1])
-            except Exception:
-                sale["cover_image_url"] = None
-        else:
-            sale["cover_image_url"] = None
-    return sales
+    return [_process_sale(s, gcs) for s in sales]
 
 
 @router.get("/search")
 async def search_marketplace(
     firestore: FirestoreDep,
     gcs: GCSDep,
+    response: Response,
     q: str | None = Query(None, description="Search by item name or brand"),
     suburb: str | None = Query(None, description="Filter by Sydney suburb"),
     category: str | None = Query(None, description="furniture|appliance|electronics|decor|other"),
@@ -55,46 +120,15 @@ async def search_marketplace(
     The Primary Marketplace View.
     Shows nearby items (by suburb) and supports keyword/category/condition/price/sort filters.
     """
+    if not user:
+        response.headers["Cache-Control"] = _CDN_CACHE
+
     items = await firestore.get_active_inventory(
         suburb=suburb, query=q, category=category,
         condition=condition, min_price=min_price, max_price=max_price, sort=sort,
     )
 
-    # Mask sensitive data for anonymous users
-    processed_items = []
-    for item in items:
-        is_owner = user and item.get("sellerId") == user.id
-
-        image_url = None
-        images = item.get("images") or []
-        cover = next((img for img in images if img.get("is_cover")), images[0] if images else None)
-        if cover:
-            gcs_path = cover.get("gcs_path")
-            if gcs_path and gcs_path.startswith("gs://"):
-                try:
-                    s = gcs_path.replace("gs://", "").split("/", 1)
-                    image_url = gcs.generate_download_url(s[0], s[1])
-                except Exception:
-                    pass
-
-        processed_items.append({
-            "id": item["id"],
-            "name": item.get("name", "Unknown Item"),
-            "brand": item.get("brand", "Generic"),
-            "condition": item.get("condition", "Good"),
-            "category": item.get("category"),
-            "price": item.get("actual_listing_price"),
-            "bundleName": item.get("bundleName"),
-            "eventId": item.get("eventId"),
-            "image_url": image_url,
-            # Restricted details
-            "metadata": {
-                "year": item.get("actual_year_of_purchase") if user else None,
-                "originalPrice": item.get("actual_original_price") if user else None,
-                "confidence": item.get("confidence") if is_owner else None,
-            },
-        })
-
+    processed_items = [_process_item(i, gcs, user) for i in items]
     return {
         "count": len(processed_items),
         "items": processed_items,
