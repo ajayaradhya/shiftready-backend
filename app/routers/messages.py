@@ -4,11 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 
-# Per-user TTL cache for unread count: {uid: (count, expires_at)}
-_unread_cache: dict[str, tuple[int, float]] = {}
-_UNREAD_TTL = 20.0
-
-from app.core.deps import FirestoreDep, MessagingDep
+from app.core.deps import FirestoreDep, GCSDep, MessagingDep
 from app.models.schemas import (
     ConversationStartRequest,
     ConversationStartResponse,
@@ -23,9 +19,12 @@ from app.models.schemas import (
     StatusResponse,
     UnreadCountResponse,
 )
-from app.core.deps import GCSDep
 from app.services.auth import User, get_current_user
 from app.services.notifier import notifier
+
+# Per-user TTL cache for unread count: {uid: (count, expires_at)}
+_unread_cache: dict[str, tuple[int, float]] = {}
+_UNREAD_TTL = 20.0
 
 logger = logging.getLogger(__name__)
 
