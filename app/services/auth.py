@@ -9,6 +9,7 @@ from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 from starlette.requests import HTTPConnection
 
+from app.core.config import settings
 from app.core.deps import FirestoreDep
 
 # Initialise Firebase Admin SDK once (uses default service account in Cloud Run)
@@ -49,8 +50,8 @@ async def get_current_user(
             detail="Missing authentication token.",
         )
 
-    # Dev-token bypass (local only — absent when K_SERVICE is set by Cloud Run)
-    if not os.getenv("K_SERVICE") and id_token.startswith("dev_"):
+    # Dev-token bypass (requires ALLOW_DEV_TOKENS=true in .env AND K_SERVICE absent)
+    if settings.allow_dev_tokens and not os.getenv("K_SERVICE") and id_token.startswith("dev_"):
         username = await firestore.upsert_user(id_token, f"{id_token}@shiftready.test", "Dev User")
         user = User(id=id_token, email=f"{id_token}@shiftready.test", name="Dev User", username=username)
         return user

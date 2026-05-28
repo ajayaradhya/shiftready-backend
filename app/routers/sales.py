@@ -4,7 +4,7 @@ import mimetypes
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, WebSocket, WebSocketDisconnect, UploadFile, File
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Request, WebSocket, WebSocketDisconnect, UploadFile, File
 from google.cloud.firestore import ArrayUnion
 
 from app.domain.status import SaleStatus
@@ -21,6 +21,7 @@ from app.services.permissions import assert_editable
 from app.core.deps import FirestoreDep, GCSDep, BucketDep, GeminiDep
 from app.services.pipelines import run_capture_refinement_pipeline
 from app.services.notifier import notifier
+from app.core.limiter import limiter
 from app.services.auth import get_current_user, validate_sale_owner, User, security
 
 logger = logging.getLogger(__name__)
@@ -44,7 +45,9 @@ async def init_capture_sale(
 
 
 @router.post("/{event_id}/capture/frame", response_model=CaptureFrameResponse)
+@limiter.limit("10/minute")
 async def capture_frame(
+    request: Request,
     event_id: str,
     gcs: GCSDep,
     bucket: BucketDep,

@@ -3,11 +3,14 @@ import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
+from app.core.limiter import limiter
 from app.core.logging import setup_logging
 from app.core.middleware import register_middleware
-from fastapi.middleware.cors import CORSMiddleware
 from app.routers import sales, marketplace, users, messages, sold, notifications
 
 setup_logging()
@@ -34,19 +37,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-origins = [
-    "https://shiftready-ui-12644234558.australia-southeast1.run.app",
-    "http://localhost",
-    "http://localhost:8080",
-    "http://localhost:3000", # TODO: Remove in prod
-]
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods (GET, POST, etc.)
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 register_middleware(app)

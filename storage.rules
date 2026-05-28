@@ -1,0 +1,9 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // All GCS access is via server-issued signed URLs. Deny all direct client access.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
