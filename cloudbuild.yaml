@@ -134,7 +134,7 @@ options:
 
 substitutions:
   _REGION: australia-southeast1
-  _SERVICE_NAME: shiftready-backend
+  _SERVICE_NAME: shiftready-api
   _REPOSITORY: shiftready-repo
   _IMAGE_NAME: backend-image
   _ALLOWED_ORIGINS: '["https://shiftready-ui-12644234558.australia-southeast1.run.app"]'
