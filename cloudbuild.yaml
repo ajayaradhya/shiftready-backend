@@ -122,6 +122,8 @@ steps:
       - '3'
       - '--update-env-vars'
       - 'ALLOWED_ORIGINS=${_ALLOWED_ORIGINS},GCP_PROJECT_ID=$PROJECT_ID,SENTRY_DSN=${_SENTRY_DSN}'
+      - '--remove-env-vars'
+      - 'GCP_UPLOAD_BUCKET'
       - '--update-secrets'
       - 'GCP_UPLOAD_BUCKET=shiftready-gcp-upload-bucket:latest'
 
