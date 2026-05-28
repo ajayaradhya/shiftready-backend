@@ -73,6 +73,12 @@ class FirestoreService:
     async def update_privacy_prefs(self, user_id: str, prefs: dict) -> None:
         return await self.users.update_privacy_prefs(user_id, prefs)
 
+    async def soft_delete_user(self, user_id: str) -> None:
+        return await self.users.soft_delete_user(user_id)
+
+    async def get_user_export_data(self, user_id: str) -> dict:
+        return await self.users.get_user_export_data(user_id)
+
     async def share_phone(self, conv_id: str, uid: str) -> None:
         return await self.conversations.share_phone(conv_id, uid)
 

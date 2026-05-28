@@ -1,8 +1,8 @@
 from datetime import datetime
 from enum import Enum
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.domain.status import SaleStatus
 
@@ -60,6 +60,13 @@ class SalePublishRequest(BaseModel):
     suburb: str
     pincode: str
     state: str = "NSW"
+
+    @field_validator("pincode")
+    @classmethod
+    def validate_au_postcode(cls, v: str) -> str:
+        if not v.isdigit() or len(v) != 4:
+            raise ValueError("Postcode must be a 4-digit Australian postcode")
+        return v
 
 
 # --- Bundle Schemas ---
@@ -203,6 +210,13 @@ class SaleUpdate(BaseModel):
     suburb: str | None = None
     pincode: str | None = None
     state: str | None = None
+
+    @field_validator("pincode")
+    @classmethod
+    def validate_au_postcode(cls, v: str | None) -> str | None:
+        if v is not None and (not v.isdigit() or len(v) != 4):
+            raise ValueError("Postcode must be a 4-digit Australian postcode")
+        return v
 
 
 class CoverUploadUrlResponse(BaseModel):
@@ -541,3 +555,12 @@ class TransactionResponse(BaseModel):
     bundleId: str | None = None
     itemId: str | None = None
     createdAt: datetime | None = None
+
+
+# --- Account Management ---
+
+class UserExportResponse(BaseModel):
+    exported_at: datetime
+    profile: dict[str, Any]
+    saved_sales: list[dict[str, Any]]
+    saved_items: list[dict[str, Any]]

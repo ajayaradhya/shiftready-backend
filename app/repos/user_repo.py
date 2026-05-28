@@ -241,6 +241,54 @@ class UserRepo:
         )
         return snap.exists
 
+    async def soft_delete_user(self, user_id: str) -> None:
+        """Scrub PII and mark account deleted. Retains transaction records per ATO 7yr requirement."""
+        user_ref = self.db.collection("users").document(user_id)
+        snap = await user_ref.get()
+        if not snap.exists:
+            raise ValueError("User not found")
+
+        data = snap.to_dict() or {}
+        old_username_lower = data.get("usernameLower")
+
+        await user_ref.update({
+            "isDeleted": True,
+            "deletedAt": firestore.SERVER_TIMESTAMP,
+            "email": None,
+            "displayName": "Deleted user",
+            "phoneE164": None,
+            "phoneShareOptIn": False,
+            "bio": None,
+            "suburb": None,
+            "state": None,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        })
+
+        if old_username_lower:
+            try:
+                await self.db.collection("usernames").document(old_username_lower).delete()
+            except Exception:
+                pass
+
+    async def get_user_export_data(self, user_id: str) -> dict:
+        user_ref = self.db.collection("users").document(user_id)
+        snap = await user_ref.get()
+        if not snap.exists:
+            raise ValueError("User not found")
+
+        profile = snap.to_dict() or {}
+        profile.pop("passwordHash", None)
+
+        sales_snaps, items_snaps = await asyncio.gather(
+            user_ref.collection("savedSales").get(),
+            user_ref.collection("savedItems").get(),
+        )
+
+        saved_sales = [{"id": d.id, **(d.to_dict() or {})} for d in sales_snaps]
+        saved_items = [{"id": d.id, **(d.to_dict() or {})} for d in items_snaps]
+
+        return {"profile": profile, "saved_sales": saved_sales, "saved_items": saved_items}
+
     async def get_saved(self, user_id: str) -> dict:
         user_ref = self.db.collection("users").document(user_id)
         sales_snaps, items_snaps = await asyncio.gather(

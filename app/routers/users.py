@@ -16,6 +16,7 @@ from app.models.schemas import (
     NotifPrefs,
     SellerPrefs,
     StatusResponse,
+    UserExportResponse,
     UserProfileResponse,
     UserSettingsResponse,
     UsernameAvailableResponse,
@@ -25,7 +26,7 @@ from app.models.schemas import (
 from app.services.auth import User, get_current_user
 from app.utils.username import is_valid_username
 
-_E164_RE = re.compile(r"^\+[1-9]\d{9,14}$")
+_AU_PHONE_RE = re.compile(r"^\+61[2-9]\d{8}$")
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -101,10 +102,10 @@ async def update_phone(
     current_user: CurrentUser,
     firestore: FirestoreDep,
 ):
-    if not _E164_RE.match(body.phoneE164):
+    if not _AU_PHONE_RE.match(body.phoneE164):
         raise HTTPException(
             status_code=422,
-            detail="Phone must be E.164 format (e.g. +61412345678)",
+            detail="Phone must be an Australian number in E.164 format (e.g. +61412345678)",
         )
     await firestore.update_phone(current_user.id, body.phoneE164, body.shareOptIn)
     return StatusResponse(status="updated")
@@ -186,6 +187,32 @@ async def update_privacy(
 ):
     await firestore.update_privacy_prefs(current_user.id, body.prefs.model_dump())
     return StatusResponse(status="updated")
+
+
+@router.delete("/me", response_model=StatusResponse, status_code=200)
+async def delete_account(current_user: CurrentUser, firestore: FirestoreDep):
+    try:
+        await firestore.soft_delete_user(current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return StatusResponse(status="deleted")
+
+
+@router.get("/me/export", response_model=UserExportResponse)
+async def export_my_data(current_user: CurrentUser, firestore: FirestoreDep):
+    from datetime import datetime, timezone
+
+    try:
+        data = await firestore.get_user_export_data(current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    return UserExportResponse(
+        exported_at=datetime.now(timezone.utc),
+        profile=data["profile"],
+        saved_sales=data["saved_sales"],
+        saved_items=data["saved_items"],
+    )
 
 
 @router.get("/me/saved", response_model=SavedListResponse)
