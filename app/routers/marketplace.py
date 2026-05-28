@@ -15,7 +15,9 @@ _CDN_CACHE = "public, max-age=30, s-maxage=120, stale-while-revalidate=300"
 def _process_item(item: dict, gcs, user) -> dict:
     image_url = None
     images = item.get("images") or []
-    cover = next((img for img in images if img.get("is_cover")), images[0] if images else None)
+    cover = next(
+        (img for img in images if img.get("is_cover")), images[0] if images else None
+    )
     if cover:
         gcs_path = cover.get("gcs_path")
         if gcs_path and gcs_path.startswith("gs://"):
@@ -65,6 +67,7 @@ def _process_sale(sale_raw: dict, gcs) -> dict:
         sale["cover_image_url"] = None
     return sale
 
+
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
@@ -83,7 +86,9 @@ async def get_landing(
 
     items_newest, items_cheapest, sales_raw = await asyncio.gather(
         firestore.get_active_inventory(suburb=suburb, postcode=postcode, sort="newest"),
-        firestore.get_active_inventory(suburb=suburb, postcode=postcode, sort="price_asc"),
+        firestore.get_active_inventory(
+            suburb=suburb, postcode=postcode, sort="price_asc"
+        ),
         firestore.list_live_sales(),
     )
 
@@ -95,7 +100,12 @@ async def get_landing(
 
 
 @router.get("/sales")
-async def list_live_sales(firestore: FirestoreDep, gcs: GCSDep, response: Response, user: User | None = Depends(get_optional_user)):
+async def list_live_sales(
+    firestore: FirestoreDep,
+    gcs: GCSDep,
+    response: Response,
+    user: User | None = Depends(get_optional_user),
+):
     """List all LIVE sales — used by the landing page sales scroll."""
     if not user:
         response.headers["Cache-Control"] = _CDN_CACHE
@@ -110,8 +120,12 @@ async def search_marketplace(
     response: Response,
     q: str | None = Query(None, description="Search by item name or brand"),
     suburb: str | None = Query(None, description="Filter by Sydney suburb"),
-    postcode: str | None = Query(None, description="Filter by 4-digit AU postcode (takes precedence over suburb)"),
-    category: str | None = Query(None, description="furniture|appliance|electronics|decor|other"),
+    postcode: str | None = Query(
+        None, description="Filter by 4-digit AU postcode (takes precedence over suburb)"
+    ),
+    category: str | None = Query(
+        None, description="furniture|appliance|electronics|decor|other"
+    ),
     condition: str | None = Query(None, description="New|Like New|Good|Fair"),
     min_price: float | None = Query(None, description="Minimum listing price"),
     max_price: float | None = Query(None, description="Maximum listing price"),
@@ -126,8 +140,14 @@ async def search_marketplace(
         response.headers["Cache-Control"] = _CDN_CACHE
 
     items = await firestore.get_active_inventory(
-        suburb=suburb, postcode=postcode, query=q, category=category,
-        condition=condition, min_price=min_price, max_price=max_price, sort=sort,
+        suburb=suburb,
+        postcode=postcode,
+        query=q,
+        category=category,
+        condition=condition,
+        min_price=min_price,
+        max_price=max_price,
+        sort=sort,
     )
 
     processed_items = [_process_item(i, gcs, user) for i in items]
@@ -165,7 +185,9 @@ async def get_public_sale(
     seller_id = sale.get("sellerId")
     seller_doc, is_saved = await asyncio.gather(
         firestore.get_user(seller_id) if seller_id else asyncio.sleep(0, result=None),
-        firestore.is_sale_saved(user.id, event_id) if user else asyncio.sleep(0, result=None),
+        firestore.is_sale_saved(user.id, event_id)
+        if user
+        else asyncio.sleep(0, result=None),
     )
 
     seller_username = seller_doc.get("username") if seller_doc else None
@@ -205,7 +227,9 @@ async def get_item_detail(
     # Generate cover image signed URL
     image_url = None
     images = item.get("images") or []
-    cover = next((img for img in images if img.get("is_cover")), images[0] if images else None)
+    cover = next(
+        (img for img in images if img.get("is_cover")), images[0] if images else None
+    )
     if cover:
         gcs_path = cover.get("gcs_path")
         if gcs_path and gcs_path.startswith("gs://"):
@@ -216,7 +240,12 @@ async def get_item_detail(
                 pass
 
     # Fetch bundle name, sale context, and saved status in parallel
-    bundle_ref = firestore.db.collection("saleEvents").document(event_id).collection("bundles").document(bundle_id)
+    bundle_ref = (
+        firestore.db.collection("saleEvents")
+        .document(event_id)
+        .collection("bundles")
+        .document(bundle_id)
+    )
     sale_ref = firestore.db.collection("saleEvents").document(event_id)
 
     if user:
@@ -237,8 +266,10 @@ async def get_item_detail(
         "brand": item.get("brand"),
         "condition": item.get("condition"),
         "price": item.get("actual_listing_price"),
-        "original_price": item.get("actual_original_price") or item.get("predicted_original_price"),
-        "year": item.get("actual_year_of_purchase") or item.get("predicted_year_of_purchase"),
+        "original_price": item.get("actual_original_price")
+        or item.get("predicted_original_price"),
+        "year": item.get("actual_year_of_purchase")
+        or item.get("predicted_year_of_purchase"),
         "image_url": image_url,
         "bundle_id": bundle_id,
         "bundle_name": bundle_data.get("name"),
@@ -254,6 +285,7 @@ async def get_item_detail(
 
 
 # --- Save / Watchlist endpoints ---
+
 
 @router.post("/sales/{event_id}/save", response_model=SaveToggleResponse)
 async def save_sale(
@@ -284,7 +316,9 @@ async def unsave_sale(
     return SaveToggleResponse(saved=False)
 
 
-@router.post("/items/{event_id}/{bundle_id}/{item_id}/save", response_model=SaveToggleResponse)
+@router.post(
+    "/items/{event_id}/{bundle_id}/{item_id}/save", response_model=SaveToggleResponse
+)
 async def save_item(
     event_id: str,
     bundle_id: str,
@@ -300,7 +334,9 @@ async def save_item(
         raise HTTPException(status_code=404, detail="Item not found")
 
     images = item.get("images") or []
-    cover = next((img for img in images if img.get("is_cover")), images[0] if images else None)
+    cover = next(
+        (img for img in images if img.get("is_cover")), images[0] if images else None
+    )
     gcs_path = cover.get("gcs_path") if cover else None
 
     metadata = {
@@ -317,7 +353,9 @@ async def save_item(
     return SaveToggleResponse(saved=True)
 
 
-@router.delete("/items/{event_id}/{bundle_id}/{item_id}/save", response_model=SaveToggleResponse)
+@router.delete(
+    "/items/{event_id}/{bundle_id}/{item_id}/save", response_model=SaveToggleResponse
+)
 async def unsave_item(
     event_id: str,
     bundle_id: str,

@@ -52,9 +52,21 @@ async def get_current_user(
         )
 
     # Dev-token bypass (requires ALLOW_DEV_TOKENS=true in .env AND K_SERVICE absent)
-    if settings.allow_dev_tokens and not os.getenv("K_SERVICE") and id_token.startswith("dev_"):
-        username = await firestore.upsert_user(id_token, f"{id_token}@shiftready.test", "Dev User")
-        user = User(id=id_token, email=f"{id_token}@shiftready.test", name="Dev User", username=username, email_verified=True)
+    if (
+        settings.allow_dev_tokens
+        and not os.getenv("K_SERVICE")
+        and id_token.startswith("dev_")
+    ):
+        username = await firestore.upsert_user(
+            id_token, f"{id_token}@shiftready.test", "Dev User"
+        )
+        user = User(
+            id=id_token,
+            email=f"{id_token}@shiftready.test",
+            name="Dev User",
+            username=username,
+            email_verified=True,
+        )
         return user
 
     try:
@@ -87,7 +99,9 @@ async def validate_sale_owner(
     if not event:
         raise HTTPException(status_code=404, detail="Sale Event not found")
     if event.get("sellerId") != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied: You do not own this sale.")
+        raise HTTPException(
+            status_code=403, detail="Access denied: You do not own this sale."
+        )
     return event
 
 

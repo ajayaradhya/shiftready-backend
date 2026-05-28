@@ -1,4 +1,5 @@
 """Unit tests for sold/lifecycle router — services mocked via dep overrides."""
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -34,6 +35,7 @@ def mock_sold_services(mock_services):
 @pytest.fixture
 def live_sale(mock_user):
     from app.main import app
+
     event = {"id": "evt1", "sellerId": mock_user.id, "status": SaleStatus.LIVE}
     app.dependency_overrides[validate_sale_owner] = lambda: event
     app.dependency_overrides[get_current_user] = lambda: mock_user
@@ -45,7 +47,12 @@ def live_sale(mock_user):
 @pytest.fixture
 def non_live_sale(mock_user):
     from app.main import app
-    event = {"id": "evt1", "sellerId": mock_user.id, "status": SaleStatus.PENDING_UPLOAD}
+
+    event = {
+        "id": "evt1",
+        "sellerId": mock_user.id,
+        "status": SaleStatus.PENDING_UPLOAD,
+    }
     app.dependency_overrides[validate_sale_owner] = lambda: event
     app.dependency_overrides[get_current_user] = lambda: mock_user
     yield event
@@ -54,6 +61,7 @@ def non_live_sale(mock_user):
 
 
 # ── Mark item sold ────────────────────────────────────────────────────────────
+
 
 async def test_mark_item_sold_success(async_client, live_sale):
     r = await async_client.post(
@@ -73,8 +81,12 @@ async def test_mark_item_sold_inactive_sale_rejected(async_client, non_live_sale
     assert "live or partially_sold" in r.json()["detail"]
 
 
-async def test_mark_item_sold_already_sold_returns_400(async_client, live_sale, mock_sold_services):
-    mock_sold_services["lc"].mark_item_sold.side_effect = ValueError("Item already sold")
+async def test_mark_item_sold_already_sold_returns_400(
+    async_client, live_sale, mock_sold_services
+):
+    mock_sold_services["lc"].mark_item_sold.side_effect = ValueError(
+        "Item already sold"
+    )
     r = await async_client.post(
         "/api/v1/sales/evt1/bundles/b1/items/i1/mark-sold",
         json={},
@@ -93,6 +105,7 @@ async def test_mark_item_sold_no_body_uses_defaults(async_client, live_sale):
 
 # ── Mark bundle sold ──────────────────────────────────────────────────────────
 
+
 async def test_mark_bundle_sold_success(async_client, live_sale):
     r = await async_client.post(
         "/api/v1/sales/evt1/bundles/b1/mark-sold",
@@ -110,8 +123,12 @@ async def test_mark_bundle_sold_inactive_sale_rejected(async_client, non_live_sa
     assert r.status_code == 409
 
 
-async def test_mark_bundle_no_items_returns_400(async_client, live_sale, mock_sold_services):
-    mock_sold_services["lc"].mark_bundle_sold.side_effect = ValueError("No available items in bundle")
+async def test_mark_bundle_no_items_returns_400(
+    async_client, live_sale, mock_sold_services
+):
+    mock_sold_services["lc"].mark_bundle_sold.side_effect = ValueError(
+        "No available items in bundle"
+    )
     r = await async_client.post(
         "/api/v1/sales/evt1/bundles/b1/mark-sold",
         json={"scope": "bundle_as_unit"},
@@ -120,6 +137,7 @@ async def test_mark_bundle_no_items_returns_400(async_client, live_sale, mock_so
 
 
 # ── Mark sale sold ────────────────────────────────────────────────────────────
+
 
 async def test_mark_sale_sold_success(async_client, live_sale):
     r = await async_client.post("/api/v1/sales/evt1/mark-sold", json={})
@@ -134,6 +152,7 @@ async def test_mark_sale_sold_inactive_rejected(async_client, non_live_sale):
 
 # ── Withdraw ──────────────────────────────────────────────────────────────────
 
+
 async def test_withdraw_item_success(async_client, live_sale):
     r = await async_client.post(
         "/api/v1/sales/evt1/bundles/b1/items/i1/withdraw",
@@ -143,7 +162,9 @@ async def test_withdraw_item_success(async_client, live_sale):
     assert r.json()["status"] == "withdrawn"
 
 
-async def test_withdraw_item_not_found_returns_400(async_client, live_sale, mock_sold_services):
+async def test_withdraw_item_not_found_returns_400(
+    async_client, live_sale, mock_sold_services
+):
     mock_sold_services["lc"].withdraw_item.side_effect = ValueError("Item not found")
     r = await async_client.post(
         "/api/v1/sales/evt1/bundles/b1/items/i1/withdraw",
@@ -163,6 +184,7 @@ async def test_withdraw_bundle_success(async_client, live_sale):
 
 # ── Transactions ──────────────────────────────────────────────────────────────
 
+
 async def test_list_transactions_empty(async_client, live_sale):
     r = await async_client.get("/api/v1/sales/evt1/transactions")
     assert r.status_code == 200
@@ -170,6 +192,7 @@ async def test_list_transactions_empty(async_client, live_sale):
 
 
 # ── Relist ────────────────────────────────────────────────────────────────────
+
 
 async def test_relist_item_success(async_client, live_sale):
     r = await async_client.post(

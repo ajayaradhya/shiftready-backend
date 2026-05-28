@@ -1,4 +1,5 @@
 """Unit tests for users router — firestore dep mocked via dep overrides."""
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -47,11 +48,13 @@ def mock_user_services(mock_services):
     fs.update_seller_prefs = AsyncMock()
     fs.update_privacy_prefs = AsyncMock()
     fs.soft_delete_user = AsyncMock()
-    fs.get_user_export_data = AsyncMock(return_value={
-        "profile": {"username": "testuser"},
-        "saved_sales": [],
-        "saved_items": [],
-    })
+    fs.get_user_export_data = AsyncMock(
+        return_value={
+            "profile": {"username": "testuser"},
+            "saved_sales": [],
+            "saved_items": [],
+        }
+    )
     fs.get_saved = AsyncMock(return_value={"saved_sales": [], "saved_items": []})
 
     gcs = MagicMock()
@@ -69,6 +72,7 @@ def mock_user_services(mock_services):
 
 # ── GET /me ───────────────────────────────────────────────────────────────────
 
+
 async def test_get_me_returns_profile(async_client):
     r = await async_client.get("/api/v1/users/me")
     assert r.status_code == 200
@@ -85,8 +89,11 @@ async def test_get_me_user_not_found(async_client, mock_user_services):
 
 # ── Username ──────────────────────────────────────────────────────────────────
 
+
 async def test_check_username_available(async_client):
-    r = await async_client.get("/api/v1/users/username-available", params={"u": "newname"})
+    r = await async_client.get(
+        "/api/v1/users/username-available", params={"u": "newname"}
+    )
     assert r.status_code == 200
     assert r.json()["available"] is True
     assert r.json()["username"] == "newname"
@@ -94,7 +101,9 @@ async def test_check_username_available(async_client):
 
 async def test_check_username_unavailable(async_client, mock_user_services):
     mock_user_services["fs"].is_username_available = AsyncMock(return_value=False)
-    r = await async_client.get("/api/v1/users/username-available", params={"u": "taken"})
+    r = await async_client.get(
+        "/api/v1/users/username-available", params={"u": "taken"}
+    )
     assert r.status_code == 200
     assert r.json()["available"] is False
 
@@ -107,13 +116,19 @@ async def test_check_username_invalid_format_rejected(async_client):
 
 
 async def test_update_username_success(async_client):
-    r = await async_client.patch("/api/v1/users/me/username", json={"username": "newname"})
+    r = await async_client.patch(
+        "/api/v1/users/me/username", json={"username": "newname"}
+    )
     assert r.status_code == 200
 
 
 async def test_update_username_taken_returns_409(async_client, mock_user_services):
-    mock_user_services["fs"].update_username = AsyncMock(side_effect=ValueError("Username already taken"))
-    r = await async_client.patch("/api/v1/users/me/username", json={"username": "takenname"})
+    mock_user_services["fs"].update_username = AsyncMock(
+        side_effect=ValueError("Username already taken")
+    )
+    r = await async_client.patch(
+        "/api/v1/users/me/username", json={"username": "takenname"}
+    )
     assert r.status_code == 409
 
 
@@ -125,29 +140,39 @@ async def test_update_username_invalid_format_returns_422(async_client):
 
 # ── Profile fields ────────────────────────────────────────────────────────────
 
+
 async def test_update_phone_valid_au_number(async_client):
-    r = await async_client.patch("/api/v1/users/me/phone", json={"phoneE164": "+61412345678"})
+    r = await async_client.patch(
+        "/api/v1/users/me/phone", json={"phoneE164": "+61412345678"}
+    )
     assert r.status_code == 200
     assert r.json()["status"] == "updated"
 
 
 async def test_update_phone_invalid_number_rejected(async_client):
-    r = await async_client.patch("/api/v1/users/me/phone", json={"phoneE164": "+1555123456"})
+    r = await async_client.patch(
+        "/api/v1/users/me/phone", json={"phoneE164": "+1555123456"}
+    )
     assert r.status_code == 422
     assert "Australian" in r.json()["detail"]
 
 
 async def test_update_profile_success(async_client):
-    r = await async_client.patch("/api/v1/users/me/profile", json={"displayName": "Jane", "bio": "Hello"})
+    r = await async_client.patch(
+        "/api/v1/users/me/profile", json={"displayName": "Jane", "bio": "Hello"}
+    )
     assert r.status_code == 200
 
 
 async def test_update_location_success(async_client):
-    r = await async_client.patch("/api/v1/users/me/location", json={"suburb": "Newtown", "state": "NSW"})
+    r = await async_client.patch(
+        "/api/v1/users/me/location", json={"suburb": "Newtown", "state": "NSW"}
+    )
     assert r.status_code == 200
 
 
 # ── Settings ──────────────────────────────────────────────────────────────────
+
 
 async def test_get_settings_returns_prefs(async_client):
     r = await async_client.get("/api/v1/users/me/settings")
@@ -168,6 +193,7 @@ async def test_update_notifications_success(async_client):
 
 # ── Account management ────────────────────────────────────────────────────────
 
+
 async def test_delete_account_success(async_client):
     r = await async_client.delete("/api/v1/users/me")
     assert r.status_code == 200
@@ -175,7 +201,9 @@ async def test_delete_account_success(async_client):
 
 
 async def test_delete_account_not_found_returns_404(async_client, mock_user_services):
-    mock_user_services["fs"].soft_delete_user = AsyncMock(side_effect=ValueError("User not found"))
+    mock_user_services["fs"].soft_delete_user = AsyncMock(
+        side_effect=ValueError("User not found")
+    )
     r = await async_client.delete("/api/v1/users/me")
     assert r.status_code == 404
 
@@ -190,12 +218,15 @@ async def test_export_data_success(async_client):
 
 
 async def test_export_data_not_found_returns_404(async_client, mock_user_services):
-    mock_user_services["fs"].get_user_export_data = AsyncMock(side_effect=ValueError("User not found"))
+    mock_user_services["fs"].get_user_export_data = AsyncMock(
+        side_effect=ValueError("User not found")
+    )
     r = await async_client.get("/api/v1/users/me/export")
     assert r.status_code == 404
 
 
 # ── Saved items ───────────────────────────────────────────────────────────────
+
 
 async def test_get_saved_returns_empty(async_client):
     r = await async_client.get("/api/v1/users/me/saved")

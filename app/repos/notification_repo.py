@@ -7,7 +7,9 @@ from google.cloud import firestore
 
 logger = logging.getLogger(__name__)
 
-NotifType = Literal["message.new", "offer.new", "offer.accepted", "offer.countered", "sale.ready"]
+NotifType = Literal[
+    "message.new", "offer.new", "offer.accepted", "offer.countered", "sale.ready"
+]
 
 
 class NotificationRepo:
@@ -26,14 +28,20 @@ class NotificationRepo:
         link: str,
     ) -> str:
         notif_id = str(uuid.uuid4())
-        await self._col(uid).document(notif_id).set({
-            "type": type,
-            "title": title,
-            "body": body,
-            "link": link,
-            "readAt": None,
-            "createdAt": firestore.SERVER_TIMESTAMP,
-        })
+        await (
+            self._col(uid)
+            .document(notif_id)
+            .set(
+                {
+                    "type": type,
+                    "title": title,
+                    "body": body,
+                    "link": link,
+                    "readAt": None,
+                    "createdAt": firestore.SERVER_TIMESTAMP,
+                }
+            )
+        )
         return notif_id
 
     async def list(self, uid: str, limit: int = 30) -> list[dict]:

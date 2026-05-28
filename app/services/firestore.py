@@ -41,7 +41,9 @@ class FirestoreService:
         )
 
     # --- user ---
-    async def upsert_user(self, user_id: str, email: str, name: str | None = None) -> str:
+    async def upsert_user(
+        self, user_id: str, email: str, name: str | None = None
+    ) -> str:
         return await self.users.upsert_user(user_id, email, name)
 
     async def get_user(self, user_id: str) -> dict | None:
@@ -53,16 +55,24 @@ class FirestoreService:
     async def update_username(self, user_id: str, new_username: str) -> None:
         return await self.users.update_username(user_id, new_username)
 
-    async def is_username_available(self, username: str, requesting_uid: str | None = None) -> bool:
+    async def is_username_available(
+        self, username: str, requesting_uid: str | None = None
+    ) -> bool:
         return await self.users.is_username_available(username, requesting_uid)
 
-    async def update_phone(self, user_id: str, phone_e164: str, share_opt_in: bool) -> None:
+    async def update_phone(
+        self, user_id: str, phone_e164: str, share_opt_in: bool
+    ) -> None:
         return await self.users.update_phone(user_id, phone_e164, share_opt_in)
 
-    async def update_profile_fields(self, user_id: str, display_name: str | None, bio: str | None) -> None:
+    async def update_profile_fields(
+        self, user_id: str, display_name: str | None, bio: str | None
+    ) -> None:
         return await self.users.update_profile_fields(user_id, display_name, bio)
 
-    async def update_location(self, user_id: str, suburb: str | None, state: str | None) -> None:
+    async def update_location(
+        self, user_id: str, suburb: str | None, state: str | None
+    ) -> None:
         return await self.users.update_location(user_id, suburb, state)
 
     async def update_notif_prefs(self, user_id: str, prefs: dict) -> None:
@@ -84,7 +94,9 @@ class FirestoreService:
         return await self.conversations.share_phone(conv_id, uid)
 
     async def get_phone_reveal(self, conv_id: str, requester_uid: str) -> str:
-        return await self.conversations.get_phone_reveal(conv_id, requester_uid, self.users)
+        return await self.conversations.get_phone_reveal(
+            conv_id, requester_uid, self.users
+        )
 
     async def save_sale(self, user_id: str, event_id: str, metadata: dict) -> None:
         return await self.users.save_sale(user_id, event_id, metadata)
@@ -114,7 +126,9 @@ class FirestoreService:
     async def get_sale_event(self, event_id: str) -> dict | None:
         return await self.sales.get_sale_event(event_id)
 
-    async def transition_sale_status(self, event_id: str, new_status: SaleStatus) -> bool:
+    async def transition_sale_status(
+        self, event_id: str, new_status: SaleStatus
+    ) -> bool:
         return await self.sales.transition_sale_status(event_id, new_status)
 
     async def update_sale_metadata(self, event_id: str, updates: dict) -> None:
@@ -143,12 +157,15 @@ class FirestoreService:
     async def hard_delete_sale(self, event_id: str) -> list[str]:
         return await self.sales.hard_delete_sale(event_id)
 
-
     # --- bundle ---
-    async def add_bundle(self, event_id: str, bundle_name: str, suggested_price: float = 0.0) -> str:
+    async def add_bundle(
+        self, event_id: str, bundle_name: str, suggested_price: float = 0.0
+    ) -> str:
         return await self.bundles.add_bundle(event_id, bundle_name, suggested_price)
 
-    async def update_bundle_metadata(self, event_id: str, bundle_id: str, updates: dict) -> None:
+    async def update_bundle_metadata(
+        self, event_id: str, bundle_id: str, updates: dict
+    ) -> None:
         return await self.bundles.update_bundle_metadata(event_id, bundle_id, updates)
 
     async def delete_bundle(self, event_id: str, bundle_id: str) -> bool:
@@ -158,7 +175,9 @@ class FirestoreService:
         return await self.bundles.recalculate_bundle_total(event_id, bundle_id)
 
     # --- item ---
-    async def add_item_to_bundle(self, event_id: str, bundle_id: str, item_data: dict) -> str:
+    async def add_item_to_bundle(
+        self, event_id: str, bundle_id: str, item_data: dict
+    ) -> str:
         return await self.items.add_item_to_bundle(event_id, bundle_id, item_data)
 
     async def update_item_data(
@@ -177,7 +196,9 @@ class FirestoreService:
     async def move_item(
         self, event_id: str, from_bundle_id: str, item_id: str, to_bundle_id: str
     ) -> None:
-        return await self.items.move_item(event_id, from_bundle_id, item_id, to_bundle_id)
+        return await self.items.move_item(
+            event_id, from_bundle_id, item_id, to_bundle_id
+        )
 
     async def reorder_item_images(
         self, event_id: str, bundle_id: str, item_id: str, image_ids: list[str]
@@ -185,7 +206,9 @@ class FirestoreService:
         return await self.items.reorder_images(event_id, bundle_id, item_id, image_ids)
 
     async def rename_bundle(self, event_id: str, bundle_id: str, name: str) -> None:
-        return await self.bundles.update_bundle_metadata(event_id, bundle_id, {"name": name})
+        return await self.bundles.update_bundle_metadata(
+            event_id, bundle_id, {"name": name}
+        )
 
     # --- marketplace ---
     async def list_live_sales(self) -> list[dict]:
@@ -205,6 +228,12 @@ class FirestoreService:
     ) -> list[dict]:
         async with timed_op("get_active_inventory"):
             return await self.marketplace.get_active_inventory(
-                suburb=suburb, postcode=postcode, query=query, category=category,
-                condition=condition, min_price=min_price, max_price=max_price, sort=sort,
+                suburb=suburb,
+                postcode=postcode,
+                query=query,
+                category=category,
+                condition=condition,
+                min_price=min_price,
+                max_price=max_price,
+                sort=sort,
             )

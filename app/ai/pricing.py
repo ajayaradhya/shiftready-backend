@@ -28,7 +28,9 @@ class PricingService:
         }
 
         try:
-            deadline = datetime.strptime(move_out_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            deadline = datetime.strptime(move_out_date, "%Y-%m-%d").replace(
+                tzinfo=timezone.utc
+            )
             days_remaining = (deadline - datetime.now(timezone.utc)).days
         except (ValueError, TypeError):
             days_remaining = 14
@@ -80,9 +82,7 @@ class PricingService:
                     for r in parsed.results
                 ]
             else:
-                results = (
-                    parsed.get("results", []) if isinstance(parsed, dict) else []
-                )
+                results = parsed.get("results", []) if isinstance(parsed, dict) else []
 
             metadata.update({"days_remaining": days_remaining, "status": "success"})
             return results, metadata

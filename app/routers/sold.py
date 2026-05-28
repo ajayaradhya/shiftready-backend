@@ -19,10 +19,14 @@ ACTIVE_STATUSES = {SaleStatus.LIVE, SaleStatus.PARTIALLY_SOLD}
 
 def _assert_sale_active(event: dict) -> None:
     if event.get("status") not in ACTIVE_STATUSES:
-        raise HTTPException(status_code=409, detail="Sale must be live or partially_sold to perform this action")
+        raise HTTPException(
+            status_code=409,
+            detail="Sale must be live or partially_sold to perform this action",
+        )
 
 
 # ── Item endpoints ───────────────────────────────────────────────────────────
+
 
 @router.post(
     "/{event_id}/bundles/{bundle_id}/items/{item_id}/mark-sold",
@@ -134,6 +138,7 @@ async def relist_item(
 
 # ── Bundle endpoints ─────────────────────────────────────────────────────────
 
+
 @router.post(
     "/{event_id}/bundles/{bundle_id}/mark-sold",
     response_model=StatusResponse,
@@ -192,6 +197,7 @@ async def withdraw_bundle(
 
 # ── Sale endpoints ────────────────────────────────────────────────────────────
 
+
 @router.post("/{event_id}/mark-sold", response_model=StatusResponse)
 async def mark_sale_sold(
     event_id: str,
@@ -237,6 +243,7 @@ async def withdraw_sale(
 
 
 # ── Transactions ─────────────────────────────────────────────────────────────
+
 
 @router.get("/{event_id}/transactions", response_model=list[TransactionResponse])
 async def list_transactions(

@@ -9,6 +9,7 @@ from app.domain.status import SaleStatus
 
 # --- Sale Initialization ---
 
+
 class CaptureInitResponse(BaseModel):
     event_id: str
 
@@ -71,6 +72,7 @@ class SalePublishRequest(BaseModel):
 
 # --- Bundle Schemas ---
 
+
 class BundleCreateRequest(BaseModel):
     name: str
 
@@ -90,8 +92,10 @@ class BundleUpdateRequest(BaseModel):
 
 # --- Item Schemas ---
 
+
 class ItemCreateRequest(BaseModel):
     """Used for adding manual assets the AI might have missed."""
+
     name: str
     brand: str = "Unknown"
     actual_listing_price: float = 0.0
@@ -133,6 +137,7 @@ class ItemCategory(str, Enum):
 
 class ItemUpdate(BaseModel):
     """Strict schema for PATCH operations to avoid overwriting unrelated fields."""
+
     name: str | None = None
     brand: str | None = None
     actual_listing_price: float | None = None
@@ -166,6 +171,7 @@ class ImageReorderRequest(BaseModel):
 
 # --- Item Image Schemas ---
 
+
 class ImageFileRequest(BaseModel):
     filename: str
     content_type: str = "image/jpeg"
@@ -195,6 +201,7 @@ class ImageConfirmRequest(BaseModel):
 
 
 # --- Sale Update / Cover Schemas ---
+
 
 class CoverImageData(BaseModel):
     id: str
@@ -238,12 +245,15 @@ class CoverFromItemRequest(BaseModel):
 
 # --- Generic Responses ---
 
+
 class StatusResponse(BaseModel):
     """Generic single-field status response (e.g. deleted, updated, processing_started)."""
+
     status: str
 
 
 # --- Response / Dashboard Schemas ---
+
 
 class SaleStatusResponse(BaseModel):
     id: str
@@ -261,6 +271,7 @@ class SaleStatusResponse(BaseModel):
 
 
 # --- User / Username Schemas ---
+
 
 class UserProfileResponse(BaseModel):
     id: str
@@ -347,6 +358,7 @@ class PublicUserResponse(BaseModel):
 
 
 # --- Messaging Schemas ---
+
 
 class MessageContext(BaseModel):
     saleEventId: str
@@ -476,6 +488,7 @@ class UnreadCountResponse(BaseModel):
 
 # --- Saved / Watchlist Schemas ---
 
+
 class SavedSaleData(BaseModel):
     eventId: str
     suburb: str | None = None
@@ -508,6 +521,7 @@ class SaveToggleResponse(BaseModel):
 
 
 # --- Sold Lifecycle Schemas ---
+
 
 class MarkSoldRequest(BaseModel):
     final_price: float | None = None
@@ -558,6 +572,7 @@ class TransactionResponse(BaseModel):
 
 
 # --- Account Management ---
+
 
 class UserExportResponse(BaseModel):
     exported_at: datetime

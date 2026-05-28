@@ -5,6 +5,7 @@ Seeds Firestore directly (bypassing the API) to control sale state precisely,
 then exercises search, privacy masking, suburb filtering, keyword search,
 and item detail endpoints.
 """
+
 import pytest
 from google.cloud import firestore as fs_lib
 from app.domain.status import SaleStatus
@@ -12,6 +13,7 @@ from .conftest import auth, SELLER, USER_A
 
 
 # ── Seed fixture ──────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 async def marketplace_data(fsdb):
@@ -23,74 +25,107 @@ async def marketplace_data(fsdb):
     """
     # --- LIVE sale: Waterloo ---
     w_ref = fsdb.collection("saleEvents").document("event_waterloo")
-    await w_ref.set({
-        "sellerId": SELLER,
-        "status": SaleStatus.LIVE,
-        "suburb": "Waterloo",
-        "createdAt": fs_lib.SERVER_TIMESTAMP,
-    })
+    await w_ref.set(
+        {
+            "sellerId": SELLER,
+            "status": SaleStatus.LIVE,
+            "suburb": "Waterloo",
+            "createdAt": fs_lib.SERVER_TIMESTAMP,
+        }
+    )
     b1 = w_ref.collection("bundles").document("b1")
     await b1.set({"name": "Living Room"})
-    await b1.collection("items").document("item_sofa").set({
-        "name": "Velvet Sofa",
-        "brand": "West Elm",
-        "condition": "Excellent",
-        "actual_listing_price": 450.0,
-        "actual_original_price": 1200.0,
-        "actual_year_of_purchase": 2023,
-        "confidence": 0.98,
-    })
-    await b1.collection("items").document("item_lamp").set({
-        "name": "Industrial Lamp",
-        "brand": "IKEA",
-        "condition": "Good",
-        "actual_listing_price": 50.0,
-        "actual_original_price": 99.0,
-        "actual_year_of_purchase": 2021,
-        "confidence": 1.0,
-    })
+    await (
+        b1.collection("items")
+        .document("item_sofa")
+        .set(
+            {
+                "name": "Velvet Sofa",
+                "brand": "West Elm",
+                "condition": "Excellent",
+                "actual_listing_price": 450.0,
+                "actual_original_price": 1200.0,
+                "actual_year_of_purchase": 2023,
+                "confidence": 0.98,
+            }
+        )
+    )
+    await (
+        b1.collection("items")
+        .document("item_lamp")
+        .set(
+            {
+                "name": "Industrial Lamp",
+                "brand": "IKEA",
+                "condition": "Good",
+                "actual_listing_price": 50.0,
+                "actual_original_price": 99.0,
+                "actual_year_of_purchase": 2021,
+                "confidence": 1.0,
+            }
+        )
+    )
 
     # --- LIVE sale: Zetland ---
     z_ref = fsdb.collection("saleEvents").document("event_zetland")
-    await z_ref.set({
-        "sellerId": "dev_seller_bob",
-        "status": SaleStatus.LIVE,
-        "suburb": "Zetland",
-        "createdAt": fs_lib.SERVER_TIMESTAMP,
-    })
+    await z_ref.set(
+        {
+            "sellerId": "dev_seller_bob",
+            "status": SaleStatus.LIVE,
+            "suburb": "Zetland",
+            "createdAt": fs_lib.SERVER_TIMESTAMP,
+        }
+    )
     b2 = z_ref.collection("bundles").document("b2")
     await b2.set({"name": "Bedroom"})
-    await b2.collection("items").document("item_bed").set({
-        "name": "Queen Bed",
-        "brand": "Koala",
-        "condition": "New",
-        "actual_listing_price": 800.0,
-        "actual_original_price": 1500.0,
-        "actual_year_of_purchase": 2024,
-        "confidence": 0.95,
-    })
+    await (
+        b2.collection("items")
+        .document("item_bed")
+        .set(
+            {
+                "name": "Queen Bed",
+                "brand": "Koala",
+                "condition": "New",
+                "actual_listing_price": 800.0,
+                "actual_original_price": 1500.0,
+                "actual_year_of_purchase": 2024,
+                "confidence": 0.95,
+            }
+        )
+    )
 
     # --- Non-LIVE sale (hidden) ---
     h_ref = fsdb.collection("saleEvents").document("event_hidden")
-    await h_ref.set({
-        "sellerId": SELLER,
-        "status": SaleStatus.READY_FOR_REVIEW,
-        "suburb": "Waterloo",
-        "createdAt": fs_lib.SERVER_TIMESTAMP,
-    })
+    await h_ref.set(
+        {
+            "sellerId": SELLER,
+            "status": SaleStatus.READY_FOR_REVIEW,
+            "suburb": "Waterloo",
+            "createdAt": fs_lib.SERVER_TIMESTAMP,
+        }
+    )
     b3 = h_ref.collection("bundles").document("b3")
     await b3.set({"name": "Misc"})
     await b3.collection("items").document("ghost").set({"name": "Invisible Chair"})
 
     return {
-        "sofa":  {"event_id": "event_waterloo", "bundle_id": "b1", "item_id": "item_sofa"},
-        "lamp":  {"event_id": "event_waterloo", "bundle_id": "b1", "item_id": "item_lamp"},
-        "bed":   {"event_id": "event_zetland",  "bundle_id": "b2", "item_id": "item_bed"},
-        "ghost": {"event_id": "event_hidden",   "bundle_id": "b3", "item_id": "ghost"},
+        "sofa": {
+            "event_id": "event_waterloo",
+            "bundle_id": "b1",
+            "item_id": "item_sofa",
+        },
+        "lamp": {
+            "event_id": "event_waterloo",
+            "bundle_id": "b1",
+            "item_id": "item_lamp",
+        },
+        "bed": {"event_id": "event_zetland", "bundle_id": "b2", "item_id": "item_bed"},
+        "ghost": {"event_id": "event_hidden", "bundle_id": "b3", "item_id": "ghost"},
     }
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 async def search(client, *, q=None, suburb=None, headers=None):
     params = {}
@@ -98,10 +133,13 @@ async def search(client, *, q=None, suburb=None, headers=None):
         params["q"] = q
     if suburb:
         params["suburb"] = suburb
-    return await client.get("/api/v1/marketplace/search", params=params, headers=headers or {})
+    return await client.get(
+        "/api/v1/marketplace/search", params=params, headers=headers or {}
+    )
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
+
 
 async def test_list_live_sales(client, marketplace_data):
     r = await client.get("/api/v1/marketplace/sales")

@@ -3,6 +3,7 @@ Idempotency key deduplication backed by Firestore.
 Collection: idempotency/{key}
 TTL field:  expires_at — configure a Firestore TTL policy on this field (Phase 7).
 """
+
 import logging
 from datetime import datetime, timezone, timedelta
 
@@ -32,10 +33,17 @@ async def get_cached(db, key: str) -> dict | None:
 async def store(db, key: str, response: dict) -> None:
     """Persist idempotency key with TTL."""
     try:
-        await db.collection("idempotency").document(key).set({
-            "response": response,
-            "created_at": fs.SERVER_TIMESTAMP,
-            "expires_at": datetime.now(timezone.utc) + timedelta(hours=_TTL_HOURS),
-        })
+        await (
+            db.collection("idempotency")
+            .document(key)
+            .set(
+                {
+                    "response": response,
+                    "created_at": fs.SERVER_TIMESTAMP,
+                    "expires_at": datetime.now(timezone.utc)
+                    + timedelta(hours=_TTL_HOURS),
+                }
+            )
+        )
     except Exception as exc:
         logger.warning("Idempotency cache write failed for key=%s: %s", key, exc)

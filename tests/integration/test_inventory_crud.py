@@ -4,10 +4,12 @@ Layer 5 — Inventory CRUD.
 Covers bundle and item create/update/delete operations and verifies that
 bundle totals are recalculated correctly after every mutation.
 """
+
 from .conftest import auth, init_sale, USER_A
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 async def add_bundle(client, event_id: str, name: str = "Test Bundle") -> str:
     r = await client.post(
@@ -46,6 +48,7 @@ async def get_summary(client, event_id: str) -> dict:
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
+
 async def test_add_bundle_appears_in_summary(client):
     event_id = await init_sale(client)
     await add_bundle(client, event_id, "Living Room")
@@ -80,9 +83,14 @@ async def test_delete_bundle_also_removes_its_items(client, fsdb):
     )
 
     # Sub-collection items must be gone too
-    items = await fsdb.collection("saleEvents").document(event_id) \
-                      .collection("bundles").document(bundle_id) \
-                      .collection("items").get()
+    items = (
+        await fsdb.collection("saleEvents")
+        .document(event_id)
+        .collection("bundles")
+        .document(bundle_id)
+        .collection("items")
+        .get()
+    )
     assert list(items) == []
 
 

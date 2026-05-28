@@ -3,6 +3,7 @@ Layer 2 — Full sale lifecycle.
 
 Tests the state machine: init → (CRUD items) → estimate (mock pricing) → publish → unpublish.
 """
+
 import pytest
 from app.domain.status import SaleStatus
 from .conftest import auth, init_sale, add_bundle_with_item, USER_A
@@ -11,17 +12,26 @@ from .conftest import auth, init_sale, add_bundle_with_item, USER_A
 @pytest.fixture
 def mock_pricing(mock_external_services):
     """Configure Gemini pricing mock to echo back item IDs with a flat price."""
+
     async def _pricing(items, move_out_date):
         return (
-            [{"id": it["id"], "listing_price": 500.0, "reasoning": "Good market value"}
-             for it in items],
+            [
+                {
+                    "id": it["id"],
+                    "listing_price": 500.0,
+                    "reasoning": "Good market value",
+                }
+                for it in items
+            ],
             {"model": "test", "status": "success"},
         )
+
     mock_external_services["price"].side_effect = _pricing
     return mock_external_services
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
+
 
 async def test_init_capture_returns_event_id(client):
     r = await client.post("/api/v1/sales/init-capture", headers=auth(USER_A))

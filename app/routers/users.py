@@ -133,9 +133,15 @@ async def get_my_settings(current_user: CurrentUser, firestore: FirestoreDep):
         suburb=user_doc.get("suburb"),
         state=user_doc.get("state"),
         joinedAt=user_doc.get("createdAt"),
-        notifPrefs=NotifPrefs(**{k: v for k, v in raw_notif.items() if k in NotifPrefs.model_fields}),
-        sellerPrefs=SellerPrefs(**{k: v for k, v in raw_seller.items() if k in SellerPrefs.model_fields}),
-        privacyPrefs=PrivacyPrefs(**{k: v for k, v in raw_privacy.items() if k in PrivacyPrefs.model_fields}),
+        notifPrefs=NotifPrefs(
+            **{k: v for k, v in raw_notif.items() if k in NotifPrefs.model_fields}
+        ),
+        sellerPrefs=SellerPrefs(
+            **{k: v for k, v in raw_seller.items() if k in SellerPrefs.model_fields}
+        ),
+        privacyPrefs=PrivacyPrefs(
+            **{k: v for k, v in raw_privacy.items() if k in PrivacyPrefs.model_fields}
+        ),
     )
 
 

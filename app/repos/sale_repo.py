@@ -13,32 +13,45 @@ class SaleRepo:
 
     async def create_sale_event(self, user_id: str) -> str:
         doc_ref = self.db.collection("saleEvents").document()
-        await doc_ref.set({
-            "sellerId": user_id,
-            "status": SaleStatus.PENDING_UPLOAD,
-            "createdAt": firestore.SERVER_TIMESTAMP,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-            "statusHistory": [{"status": SaleStatus.PENDING_UPLOAD, "timestamp": datetime.now(timezone.utc)}],
-        })
+        await doc_ref.set(
+            {
+                "sellerId": user_id,
+                "status": SaleStatus.PENDING_UPLOAD,
+                "createdAt": firestore.SERVER_TIMESTAMP,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+                "statusHistory": [
+                    {
+                        "status": SaleStatus.PENDING_UPLOAD,
+                        "timestamp": datetime.now(timezone.utc),
+                    }
+                ],
+            }
+        )
         return doc_ref.id
 
     async def get_sale_event(self, event_id: str) -> dict | None:
         doc = await self._ref(event_id).get()
         return doc.to_dict() if doc.exists else None
 
-    async def transition_sale_status(self, event_id: str, new_status: SaleStatus) -> bool:
-        await self._ref(event_id).update({
-            "status": new_status,
-            "lastTransitionAt": firestore.SERVER_TIMESTAMP,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-            "statusHistory": firestore.ArrayUnion([
-                {"status": new_status, "timestamp": datetime.now(timezone.utc)}
-            ]),
-        })
+    async def transition_sale_status(
+        self, event_id: str, new_status: SaleStatus
+    ) -> bool:
+        await self._ref(event_id).update(
+            {
+                "status": new_status,
+                "lastTransitionAt": firestore.SERVER_TIMESTAMP,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+                "statusHistory": firestore.ArrayUnion(
+                    [{"status": new_status, "timestamp": datetime.now(timezone.utc)}]
+                ),
+            }
+        )
         return True
 
     async def update_sale_metadata(self, event_id: str, updates: dict) -> None:
-        await self._ref(event_id).update({**updates, "updatedAt": firestore.SERVER_TIMESTAMP})
+        await self._ref(event_id).update(
+            {**updates, "updatedAt": firestore.SERVER_TIMESTAMP}
+        )
 
     async def list_all_sales(self, user_id: str) -> list[dict]:
         docs = (
@@ -65,7 +78,10 @@ class SaleRepo:
                     total_value += price
                     if len(preview_paths) < 5:
                         images = item_data.get("images") or []
-                        cover = next((img for img in images if img.get("is_cover")), images[0] if images else None)
+                        cover = next(
+                            (img for img in images if img.get("is_cover")),
+                            images[0] if images else None,
+                        )
                         if cover and cover.get("gcs_path"):
                             preview_paths.append(cover["gcs_path"])
             data["itemCount"] = item_count
@@ -84,23 +100,29 @@ class SaleRepo:
             "userId": user_id,
             "ts": datetime.now(timezone.utc),
         }
-        await self._ref(event_id).update({
-            **updates,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-            "editHistory": firestore.ArrayUnion([history_entry]),
-        })
+        await self._ref(event_id).update(
+            {
+                **updates,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+                "editHistory": firestore.ArrayUnion([history_entry]),
+            }
+        )
 
     async def set_cover(self, event_id: str, cover_data: dict) -> None:
-        await self._ref(event_id).update({
-            "coverImage": cover_data,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        })
+        await self._ref(event_id).update(
+            {
+                "coverImage": cover_data,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            }
+        )
 
     async def clear_cover(self, event_id: str) -> None:
-        await self._ref(event_id).update({
-            "coverImage": firestore.DELETE_FIELD,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        })
+        await self._ref(event_id).update(
+            {
+                "coverImage": firestore.DELETE_FIELD,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            }
+        )
 
     async def get_full_event_summary(self, event_id: str) -> dict | None:
         event_ref = self._ref(event_id)
@@ -119,14 +141,21 @@ class SaleRepo:
         return data
 
     async def archive_sale(self, event_id: str) -> None:
-        await self._ref(event_id).update({
-            "status": SaleStatus.ARCHIVED,
-            "deletedAt": firestore.SERVER_TIMESTAMP,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-            "statusHistory": firestore.ArrayUnion([
-                {"status": SaleStatus.ARCHIVED, "timestamp": datetime.now(timezone.utc)}
-            ]),
-        })
+        await self._ref(event_id).update(
+            {
+                "status": SaleStatus.ARCHIVED,
+                "deletedAt": firestore.SERVER_TIMESTAMP,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+                "statusHistory": firestore.ArrayUnion(
+                    [
+                        {
+                            "status": SaleStatus.ARCHIVED,
+                            "timestamp": datetime.now(timezone.utc),
+                        }
+                    ]
+                ),
+            }
+        )
 
     async def hard_delete_sale(self, event_id: str) -> list[str]:
         """Cascade-delete all subcollections + sale doc. Returns GCS paths for caller to purge."""
@@ -151,4 +180,3 @@ class SaleRepo:
 
         await event_ref.delete()
         return gcs_paths
-

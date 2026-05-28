@@ -29,8 +29,12 @@ def get_clean_schema(model, *, is_pricing: bool = False) -> dict[str, Any]:
         schema = inline_refs(schema)
 
     # 2. Strip null branches and backend-owned fields
-    _BACKEND_FIELDS = {"actual_original_price", "actual_year_of_purchase",
-                       "actual_listing_price", "pricing_reasoning"}
+    _BACKEND_FIELDS = {
+        "actual_original_price",
+        "actual_year_of_purchase",
+        "actual_listing_price",
+        "pricing_reasoning",
+    }
     _AI_FORBIDDEN = {"id", "listing_price"} if not is_pricing else set()
 
     forbidden = _BACKEND_FIELDS | _AI_FORBIDDEN

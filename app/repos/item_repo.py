@@ -18,7 +18,9 @@ class ItemRepo:
             .document(item_id)
         )
 
-    async def add_item_to_bundle(self, event_id: str, bundle_id: str, item_data: dict) -> str:
+    async def add_item_to_bundle(
+        self, event_id: str, bundle_id: str, item_data: dict
+    ) -> str:
         ref = (
             self.db.collection("saleEvents")
             .document(event_id)

@@ -4,6 +4,7 @@ Integration Layer 6 — Messaging.
 Tests start-conversation, send text, send offer, accept offer, and mark-read
 against the Firestore emulator.  GCS and Gemini remain mocked.
 """
+
 import pytest
 from google.cloud import firestore as fs_lib
 
@@ -12,20 +13,28 @@ from .conftest import auth, USER_A, SELLER
 
 # ── Seed fixtures ─────────────────────────────────────────────────────────────
 
+
 @pytest.fixture(autouse=True)
 async def seed_users(fsdb):
     """Both conversation participants must exist in users/{uid}."""
     for uid, username in [(USER_A, "alpha_user"), (SELLER, "ace_seller")]:
-        await fsdb.collection("users").document(uid).set({
-            "id": uid,
-            "email": f"{uid}@test.com",
-            "username": username,
-            "usernameSetByUser": True,
-            "createdAt": fs_lib.SERVER_TIMESTAMP,
-        })
+        await (
+            fsdb.collection("users")
+            .document(uid)
+            .set(
+                {
+                    "id": uid,
+                    "email": f"{uid}@test.com",
+                    "username": username,
+                    "usernameSetByUser": True,
+                    "createdAt": fs_lib.SERVER_TIMESTAMP,
+                }
+            )
+        )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 async def start_conv(client, buyer=USER_A, seller=SELLER) -> str:
     r = await client.post(
@@ -38,6 +47,7 @@ async def start_conv(client, buyer=USER_A, seller=SELLER) -> str:
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
+
 
 async def test_start_conversation_creates_conv(client):
     conv_id = await start_conv(client)

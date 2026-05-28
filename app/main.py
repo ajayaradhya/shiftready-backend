@@ -30,6 +30,7 @@ if settings.sentry_dsn:
 async def lifespan(app: FastAPI):
     try:
         from app.services import firestore_svc
+
         await firestore_svc.db.collection("_warmup").limit(1).get()
         logger.info("Firestore connection pre-warmed")
     except Exception as exc:
@@ -69,6 +70,7 @@ async def health_check():
     firestore_ok = False
     try:
         from app.services import firestore_svc
+
         await firestore_svc.db.collection("_warmup").limit(1).get()
         firestore_ok = True
     except Exception:
@@ -90,11 +92,13 @@ async def health_check():
 async def warmup():
     """Cloud Run warmup handler."""
     from app.services import firestore_svc  # noqa: F401
+
     return {"status": "warm"}
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",

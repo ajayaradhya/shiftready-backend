@@ -4,6 +4,7 @@ Layer 3 — Authorisation.
 Every sale-mutating and sale-reading endpoint must reject a user who does not
 own the sale.  Only the sale owner should succeed.
 """
+
 import pytest
 from .conftest import auth, init_sale, USER_A, USER_B
 
@@ -60,7 +61,9 @@ async def test_other_user_cannot_add_bundle(client, user_a_sale):
 
 
 async def test_nonexistent_event_returns_404(client):
-    r = await client.get("/api/v1/sales/nonexistent_event_id/status", headers=auth(USER_A))
+    r = await client.get(
+        "/api/v1/sales/nonexistent_event_id/status", headers=auth(USER_A)
+    )
     assert r.status_code == 404
 
 

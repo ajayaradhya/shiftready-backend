@@ -8,6 +8,7 @@ Verifies that the status stream endpoint:
 
 Uses httpx-ws which handles the WebSocket upgrade over the ASGITransport.
 """
+
 import pytest
 import asyncio
 from httpx_ws import aconnect_ws
@@ -38,13 +39,20 @@ async def test_ws_rejects_non_owner(client):
             await ws.receive_json()
 
 
-async def test_ws_receives_pricing_complete_notification(client, mock_external_services):
+async def test_ws_receives_pricing_complete_notification(
+    client, mock_external_services
+):
     """After the pricing pipeline completes, connected clients get a READY_FOR_REVIEW broadcast."""
+
     async def _pricing(items, move_out_date):
         return (
-            [{"id": it["id"], "listing_price": 300.0, "reasoning": "Market rate"} for it in items],
+            [
+                {"id": it["id"], "listing_price": 300.0, "reasoning": "Market rate"}
+                for it in items
+            ],
             {"status": "success"},
         )
+
     mock_external_services["price"].side_effect = _pricing
 
     event_id = await init_sale(client)

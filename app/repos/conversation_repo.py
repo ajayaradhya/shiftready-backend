@@ -69,11 +69,13 @@ class ConversationRepo:
         return result
 
     async def block_conversation(self, conv_id: str, blocker_uid: str) -> None:
-        await self._conv_ref(conv_id).update({
-            "status": "blocked",
-            "blockedBy": blocker_uid,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        })
+        await self._conv_ref(conv_id).update(
+            {
+                "status": "blocked",
+                "blockedBy": blocker_uid,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            }
+        )
 
     async def unblock_conversation(self, conv_id: str, uid: str) -> None:
         conv = await self.get_conversation(conv_id)
@@ -81,11 +83,13 @@ class ConversationRepo:
             return
         if conv.get("blockedBy") != uid:
             raise ValueError("Only the blocker can unblock")
-        await self._conv_ref(conv_id).update({
-            "status": "active",
-            "blockedBy": None,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        })
+        await self._conv_ref(conv_id).update(
+            {
+                "status": "active",
+                "blockedBy": None,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            }
+        )
 
     async def set_pin(
         self,
@@ -95,11 +99,13 @@ class ConversationRepo:
         actor_uid: str,
         actor_username: str | None = None,
     ) -> dict:
-        await self._conv_ref(conv_id).update({
-            "pin": pin_ref,
-            "pinSnapshot": snapshot,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        })
+        await self._conv_ref(conv_id).update(
+            {
+                "pin": pin_ref,
+                "pinSnapshot": snapshot,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            }
+        )
         msg_ref = self._msg_col(conv_id).document()
         now = datetime.now(timezone.utc)
         target_name = snapshot.get("name") or pin_ref.get("kind", "item")
@@ -122,11 +128,13 @@ class ConversationRepo:
         actor_uid: str,
         actor_username: str | None = None,
     ) -> dict:
-        await self._conv_ref(conv_id).update({
-            "pin": None,
-            "pinSnapshot": None,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        })
+        await self._conv_ref(conv_id).update(
+            {
+                "pin": None,
+                "pinSnapshot": None,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            }
+        )
         msg_ref = self._msg_col(conv_id).document()
         now = datetime.now(timezone.utc)
         msg_data = {
@@ -141,11 +149,13 @@ class ConversationRepo:
         return {"id": msg_ref.id, **msg_data}
 
     async def mark_read(self, conv_id: str, uid: str) -> None:
-        await self._conv_ref(conv_id).update({
-            f"participantsMap.{uid}.lastReadAt": firestore.SERVER_TIMESTAMP,
-            f"participantsMap.{uid}.unreadCount": 0,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        })
+        await self._conv_ref(conv_id).update(
+            {
+                f"participantsMap.{uid}.lastReadAt": firestore.SERVER_TIMESTAMP,
+                f"participantsMap.{uid}.unreadCount": 0,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            }
+        )
 
     # ── messages ──────────────────────────────────────────────────────────────
 
@@ -191,12 +201,14 @@ class ConversationRepo:
         other = [p for p in conv["participants"] if p != sender_uid]
         if other:
             other_uid = other[0]
-            await self._conv_ref(conv_id).update({
-                "lastMessage": text[:100],
-                "lastMessageAt": firestore.SERVER_TIMESTAMP,
-                "updatedAt": firestore.SERVER_TIMESTAMP,
-                f"participantsMap.{other_uid}.unreadCount": firestore.Increment(1),
-            })
+            await self._conv_ref(conv_id).update(
+                {
+                    "lastMessage": text[:100],
+                    "lastMessageAt": firestore.SERVER_TIMESTAMP,
+                    "updatedAt": firestore.SERVER_TIMESTAMP,
+                    f"participantsMap.{other_uid}.unreadCount": firestore.Increment(1),
+                }
+            )
 
         return {"id": msg_ref.id, **msg_data}
 
@@ -278,10 +290,16 @@ class ConversationRepo:
 
         # If counter, mark parent countered
         if parent_offer_id:
-            await self._offer_col(conv_id).document(parent_offer_id).update({
-                "status": "countered",
-                "updatedAt": firestore.SERVER_TIMESTAMP,
-            })
+            await (
+                self._offer_col(conv_id)
+                .document(parent_offer_id)
+                .update(
+                    {
+                        "status": "countered",
+                        "updatedAt": firestore.SERVER_TIMESTAMP,
+                    }
+                )
+            )
 
         saves_str = ""
         if list_price and list_price > amount:
@@ -344,15 +362,20 @@ class ConversationRepo:
             raise PermissionError("Cannot accept your own offer")
 
         now = datetime.now(timezone.utc)
-        await self._offer_col(conv_id).document(offer_id).update({
-            "status": "accepted",
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        })
+        await (
+            self._offer_col(conv_id)
+            .document(offer_id)
+            .update(
+                {
+                    "status": "accepted",
+                    "updatedAt": firestore.SERVER_TIMESTAMP,
+                }
+            )
+        )
 
         accepted_msg_ref = self._msg_col(conv_id).document()
         accepted_payload = {
-            **{k: v for k, v in offer.get("offerPayload", {}).items()
-               if k != "status"},
+            **{k: v for k, v in offer.get("offerPayload", {}).items() if k != "status"},
             "offerId": offer_id,
             "amount": offer["amount"],
             "currency": offer.get("currency", "AUD"),
@@ -453,10 +476,16 @@ class ConversationRepo:
             raise PermissionError("Can only withdraw your own offer")
 
         now = datetime.now(timezone.utc)
-        await self._offer_col(conv_id).document(offer_id).update({
-            "status": "withdrawn",
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        })
+        await (
+            self._offer_col(conv_id)
+            .document(offer_id)
+            .update(
+                {
+                    "status": "withdrawn",
+                    "updatedAt": firestore.SERVER_TIMESTAMP,
+                }
+            )
+        )
 
         msg_ref = self._msg_col(conv_id).document()
         msg_data = {
@@ -487,10 +516,12 @@ class ConversationRepo:
             raise ValueError("Conversation not found")
         if uid not in conv.get("participants", []):
             raise PermissionError("Not a participant")
-        await self._conv_ref(conv_id).update({
-            f"phoneSharedBy.{uid}": True,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        })
+        await self._conv_ref(conv_id).update(
+            {
+                f"phoneSharedBy.{uid}": True,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            }
+        )
 
     async def get_phone_reveal(
         self,
@@ -524,6 +555,7 @@ class ConversationRepo:
 
     async def _check_rate_limit(self, conv_id: str, sender_uid: str) -> None:
         from datetime import timedelta
+
         now = datetime.now(timezone.utc)
         one_min_ago = now - timedelta(minutes=1)
         one_day_ago = now - timedelta(days=1)

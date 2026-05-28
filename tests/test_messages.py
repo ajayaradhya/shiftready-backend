@@ -1,4 +1,5 @@
 """Unit tests for messages router — all services mocked via dep overrides."""
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -35,11 +36,13 @@ def mock_msg_deps(mock_services):
     fs.users = MagicMock()
     fs.users.update_last_seen = AsyncMock()
     fs.conversations = MagicMock()
-    fs.conversations.get_conversation = AsyncMock(return_value={
-        "id": "conv1",
-        "participants": ["buyer_123", "seller_456"],
-        "status": "active",
-    })
+    fs.conversations.get_conversation = AsyncMock(
+        return_value={
+            "id": "conv1",
+            "participants": ["buyer_123", "seller_456"],
+            "status": "active",
+        }
+    )
     fs.get_phone_reveal = AsyncMock(return_value="+61412345678")
     fs.share_phone = AsyncMock()
 
@@ -68,6 +71,7 @@ def mock_msg_deps(mock_services):
 
 
 # ── Conversation creation ─────────────────────────────────────────────────────
+
 
 async def test_start_conversation_success(async_client):
     r = await async_client.post(
@@ -108,6 +112,7 @@ async def test_start_conversation_with_initial_message(async_client, mock_msg_de
 
 # ── Conversation list + unread ────────────────────────────────────────────────
 
+
 async def test_list_conversations_returns_empty(async_client):
     r = await async_client.get("/api/v1/messages/conversations")
     assert r.status_code == 200
@@ -121,6 +126,7 @@ async def test_unread_count(async_client):
 
 
 # ── Messages ──────────────────────────────────────────────────────────────────
+
 
 async def test_get_messages(async_client):
     r = await async_client.get("/api/v1/messages/conversations/conv1/messages")
@@ -154,6 +160,7 @@ async def test_mark_read_success(async_client):
 
 
 # ── Offers ────────────────────────────────────────────────────────────────────
+
 
 async def test_send_offer_success(async_client):
     r = await async_client.post(
@@ -213,6 +220,7 @@ async def test_withdraw_offer_success(async_client):
 
 # ── Permission errors bubble up correctly ─────────────────────────────────────
 
+
 async def test_send_message_permission_error_is_403(async_client, mock_msg_deps):
     mock_msg_deps["svc"].send.side_effect = PermissionError("Not a participant")
     r = await async_client.post(
@@ -223,7 +231,9 @@ async def test_send_message_permission_error_is_403(async_client, mock_msg_deps)
 
 
 async def test_accept_offer_permission_error_is_403(async_client, mock_msg_deps):
-    mock_msg_deps["svc"].accept_offer.side_effect = PermissionError("Only seller can accept")
+    mock_msg_deps["svc"].accept_offer.side_effect = PermissionError(
+        "Only seller can accept"
+    )
     r = await async_client.post(
         "/api/v1/messages/conversations/conv1/offers/offer1/accept"
     )

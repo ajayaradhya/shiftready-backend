@@ -13,22 +13,28 @@ class BundleRepo:
             .document(bundle_id)
         )
 
-    async def add_bundle(self, event_id: str, bundle_name: str, suggested_price: float = 0.0) -> str:
+    async def add_bundle(
+        self, event_id: str, bundle_name: str, suggested_price: float = 0.0
+    ) -> str:
         ref = (
             self.db.collection("saleEvents")
             .document(event_id)
             .collection("bundles")
             .document()
         )
-        await ref.set({
-            "name": bundle_name,
-            "suggestedPrice": suggested_price,
-            "isPublished": False,
-            "createdAt": firestore.SERVER_TIMESTAMP,
-        })
+        await ref.set(
+            {
+                "name": bundle_name,
+                "suggestedPrice": suggested_price,
+                "isPublished": False,
+                "createdAt": firestore.SERVER_TIMESTAMP,
+            }
+        )
         return ref.id
 
-    async def update_bundle_metadata(self, event_id: str, bundle_id: str, updates: dict) -> None:
+    async def update_bundle_metadata(
+        self, event_id: str, bundle_id: str, updates: dict
+    ) -> None:
         await self._bundle_ref(event_id, bundle_id).update(updates)
 
     async def delete_bundle(self, event_id: str, bundle_id: str) -> bool:
@@ -55,8 +61,10 @@ class BundleRepo:
                 total += float(i.to_dict().get("actual_listing_price") or 0)
             except (ValueError, TypeError):
                 continue
-        await bundle_ref.update({
-            "suggestedPrice": total,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        })
+        await bundle_ref.update(
+            {
+                "suggestedPrice": total,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            }
+        )
         return total

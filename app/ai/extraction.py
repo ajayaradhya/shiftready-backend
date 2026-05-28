@@ -241,7 +241,9 @@ class ExtractionService:
         }
 
         refinement_schema = get_clean_schema(RefinementResult)
-        prompt = f"{_REFINEMENT_PROMPT}\n\nItems:\n{json.dumps(items, ensure_ascii=False)}"
+        prompt = (
+            f"{_REFINEMENT_PROMPT}\n\nItems:\n{json.dumps(items, ensure_ascii=False)}"
+        )
 
         response = await self._client.aio.models.generate_content(
             model=self._model_id,
@@ -265,14 +267,20 @@ class ExtractionService:
         metadata["status"] = "success"
 
         try:
-            parsed = response.parsed if response.parsed is not None else json.loads(response.text)
+            parsed = (
+                response.parsed
+                if response.parsed is not None
+                else json.loads(response.text)
+            )
             if hasattr(parsed, "bundles"):
                 bundles = [b.model_dump() for b in parsed.bundles]
             elif isinstance(parsed, dict):
                 bundles = parsed.get("bundles", [])
             else:
                 bundles = []
-            logger.info(f"Refinement complete | {len(bundles)} bundles | items={len(items)}")
+            logger.info(
+                f"Refinement complete | {len(bundles)} bundles | items={len(items)}"
+            )
             return bundles, metadata
         except Exception as exc:
             logger.error(f"Failed to parse refinement response: {exc}")
@@ -295,18 +303,32 @@ class ExtractionService:
             ),
         )
 
-        usage = response.usage_metadata.total_token_count if hasattr(response, "usage_metadata") else "n/a"
-        parsed = response.parsed if response.parsed is not None else json.loads(response.text)
+        usage = (
+            response.usage_metadata.total_token_count
+            if hasattr(response, "usage_metadata")
+            else "n/a"
+        )
+        parsed = (
+            response.parsed
+            if response.parsed is not None
+            else json.loads(response.text)
+        )
 
         if hasattr(parsed, "model_dump"):
             result = parsed.model_dump()
         elif isinstance(parsed, dict):
             result = parsed
         else:
-            result = {"name": str(parsed), "brand": "Unknown", "predicted_original_price": 0.0}
+            result = {
+                "name": str(parsed),
+                "brand": "Unknown",
+                "predicted_original_price": 0.0,
+            }
 
         result.setdefault("confidence", "medium")
-        logger.info(f"Single frame identified | name={result.get('name')} | confidence={result.get('confidence')} | tokens={usage}")
+        logger.info(
+            f"Single frame identified | name={result.get('name')} | confidence={result.get('confidence')} | tokens={usage}"
+        )
         return result
 
     async def suggest_sale_title(self, item_names: list[str]) -> str:
@@ -317,6 +339,10 @@ class ExtractionService:
             contents=prompt,
         )
         title = (response.text or "").strip().strip('"').strip("'")
-        usage = response.usage_metadata.total_token_count if hasattr(response, "usage_metadata") else "n/a"
+        usage = (
+            response.usage_metadata.total_token_count
+            if hasattr(response, "usage_metadata")
+            else "n/a"
+        )
         logger.info(f"Sale title suggested | title={title!r} | tokens={usage}")
         return title

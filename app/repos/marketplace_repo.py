@@ -20,7 +20,9 @@ class MarketplaceRepo:
         sort: str | None = None,
     ) -> list[dict]:
         sales_query = self.db.collection("saleEvents").where(
-            filter=firestore.FieldFilter("status", "in", [SaleStatus.LIVE, SaleStatus.PARTIALLY_SOLD])
+            filter=firestore.FieldFilter(
+                "status", "in", [SaleStatus.LIVE, SaleStatus.PARTIALLY_SOLD]
+            )
         )
         if postcode:
             sales_query = sales_query.where(
@@ -35,11 +37,15 @@ class MarketplaceRepo:
             return []
 
         # Fetch all bundles for all LIVE sales concurrently (eliminates N sequential reads)
-        bundle_snapshots = await asyncio.gather(*[
-            self.db.collection("saleEvents").document(sale.id)
-                   .collection("bundles").get()
-            for sale in live_sales
-        ])
+        bundle_snapshots = await asyncio.gather(
+            *[
+                self.db.collection("saleEvents")
+                .document(sale.id)
+                .collection("bundles")
+                .get()
+                for sale in live_sales
+            ]
+        )
 
         # Build (sale_meta, bundle_doc) pairs then fetch all item collections concurrently
         bundle_pairs = [
@@ -50,10 +56,9 @@ class MarketplaceRepo:
         if not bundle_pairs:
             return []
 
-        item_snapshots = await asyncio.gather(*[
-            bundle.reference.collection("items").get()
-            for _, bundle in bundle_pairs
-        ])
+        item_snapshots = await asyncio.gather(
+            *[bundle.reference.collection("items").get() for _, bundle in bundle_pairs]
+        )
 
         results = []
         q_lower = query.lower() if query else None
@@ -74,10 +79,16 @@ class MarketplaceRepo:
                 ):
                     continue
 
-                if category and item_data.get("category", "").lower() != category.lower():
+                if (
+                    category
+                    and item_data.get("category", "").lower() != category.lower()
+                ):
                     continue
 
-                if condition_lower and item_data.get("condition", "").lower() != condition_lower:
+                if (
+                    condition_lower
+                    and item_data.get("condition", "").lower() != condition_lower
+                ):
                     continue
 
                 price = item_data.get("actual_listing_price")
@@ -86,19 +97,31 @@ class MarketplaceRepo:
                 if max_price is not None and (price is None or price > max_price):
                     continue
 
-                results.append({
-                    **item_data,
-                    "id": item.id,
-                    "bundleName": b_data.get("name"),
-                    "eventId": sale.id,
-                    "sellerId": sale_data.get("sellerId"),
-                    "sale_status": sale_status,
-                })
+                results.append(
+                    {
+                        **item_data,
+                        "id": item.id,
+                        "bundleName": b_data.get("name"),
+                        "eventId": sale.id,
+                        "sellerId": sale_data.get("sellerId"),
+                        "sale_status": sale_status,
+                    }
+                )
 
         if sort == "price_asc":
-            results.sort(key=lambda x: (x.get("actual_listing_price") is None, x.get("actual_listing_price") or 0))
+            results.sort(
+                key=lambda x: (
+                    x.get("actual_listing_price") is None,
+                    x.get("actual_listing_price") or 0,
+                )
+            )
         elif sort == "price_desc":
-            results.sort(key=lambda x: (x.get("actual_listing_price") is None, -(x.get("actual_listing_price") or 0)))
+            results.sort(
+                key=lambda x: (
+                    x.get("actual_listing_price") is None,
+                    -(x.get("actual_listing_price") or 0),
+                )
+            )
 
         return results
 
@@ -106,9 +129,13 @@ class MarketplaceRepo:
         self, event_id: str, bundle_id: str, item_id: str
     ) -> dict | None:
         doc = await (
-            self.db.collection("saleEvents").document(event_id)
-                   .collection("bundles").document(bundle_id)
-                   .collection("items").document(item_id).get()
+            self.db.collection("saleEvents")
+            .document(event_id)
+            .collection("bundles")
+            .document(bundle_id)
+            .collection("items")
+            .document(item_id)
+            .get()
         )
         return {**doc.to_dict(), "id": doc.id} if doc.exists else None
 
@@ -116,7 +143,11 @@ class MarketplaceRepo:
         """Return summary rows for every LIVE or PARTIALLY_SOLD sale — used by the landing page sales scroll."""
         live_docs = await (
             self.db.collection("saleEvents")
-            .where(filter=firestore.FieldFilter("status", "in", [SaleStatus.LIVE, SaleStatus.PARTIALLY_SOLD]))
+            .where(
+                filter=firestore.FieldFilter(
+                    "status", "in", [SaleStatus.LIVE, SaleStatus.PARTIALLY_SOLD]
+                )
+            )
             .limit(20)
             .get()
         )
@@ -124,22 +155,29 @@ class MarketplaceRepo:
             return []
 
         # Fetch all bundle sub-collections concurrently to get item counts + min price
-        bundle_snapshots = await asyncio.gather(*[
-            self.db.collection("saleEvents").document(doc.id)
-                   .collection("bundles").get()
-            for doc in live_docs
-        ])
+        bundle_snapshots = await asyncio.gather(
+            *[
+                self.db.collection("saleEvents")
+                .document(doc.id)
+                .collection("bundles")
+                .get()
+                for doc in live_docs
+            ]
+        )
 
-        item_snapshots = await asyncio.gather(*[
-            asyncio.gather(*[
-                bundle.reference.collection("items").get()
-                for bundle in bundles
-            ])
-            for bundles in bundle_snapshots
-        ])
+        item_snapshots = await asyncio.gather(
+            *[
+                asyncio.gather(
+                    *[bundle.reference.collection("items").get() for bundle in bundles]
+                )
+                for bundles in bundle_snapshots
+            ]
+        )
 
         results = []
-        for sale_doc, bundles, per_bundle_items in zip(live_docs, bundle_snapshots, item_snapshots):
+        for sale_doc, bundles, per_bundle_items in zip(
+            live_docs, bundle_snapshots, item_snapshots
+        ):
             data = sale_doc.to_dict()
             all_items = [item for items in per_bundle_items for item in items]
             prices = []
@@ -151,22 +189,27 @@ class MarketplaceRepo:
                     prices.append(price)
                 if len(preview_paths) < 4:
                     images = d.get("images") or []
-                    cover = next((img for img in images if img.get("is_cover")), images[0] if images else None)
+                    cover = next(
+                        (img for img in images if img.get("is_cover")),
+                        images[0] if images else None,
+                    )
                     if cover and cover.get("gcs_path"):
                         preview_paths.append(cover["gcs_path"])
             sale_cover = data.get("coverImage") or {}
-            results.append({
-                "eventId": sale_doc.id,
-                "suburb": data.get("suburb"),
-                "state": data.get("state"),
-                "title": data.get("title"),
-                "description": data.get("description"),
-                "itemCount": len(all_items),
-                "minPrice": min(prices) if prices else None,
-                "publishedAt": data.get("publishedAt"),
-                "preview_images": preview_paths,
-                "cover_image_gcs": sale_cover.get("gcs_path"),
-            })
+            results.append(
+                {
+                    "eventId": sale_doc.id,
+                    "suburb": data.get("suburb"),
+                    "state": data.get("state"),
+                    "title": data.get("title"),
+                    "description": data.get("description"),
+                    "itemCount": len(all_items),
+                    "minPrice": min(prices) if prices else None,
+                    "publishedAt": data.get("publishedAt"),
+                    "preview_images": preview_paths,
+                    "cover_image_gcs": sale_cover.get("gcs_path"),
+                }
+            )
         return results
 
     async def get_public_sale(self, event_id: str) -> dict | None:
@@ -179,16 +222,23 @@ class MarketplaceRepo:
             return None
 
         bundle_docs = await (
-            self.db.collection("saleEvents").document(event_id)
-                   .collection("bundles").get()
+            self.db.collection("saleEvents")
+            .document(event_id)
+            .collection("bundles")
+            .get()
         )
 
-        item_snapshots = await asyncio.gather(*[
-            self.db.collection("saleEvents").document(event_id)
-                   .collection("bundles").document(b.id)
-                   .collection("items").get()
-            for b in bundle_docs
-        ])
+        item_snapshots = await asyncio.gather(
+            *[
+                self.db.collection("saleEvents")
+                .document(event_id)
+                .collection("bundles")
+                .document(b.id)
+                .collection("items")
+                .get()
+                for b in bundle_docs
+            ]
+        )
 
         DEFAULT_BUNDLE_DISCOUNT = 0.20
         bundles = []
@@ -198,31 +248,42 @@ class MarketplaceRepo:
             for item in items:
                 d = item.to_dict()
                 images = d.get("images") or []
-                cover = next((img for img in images if img.get("is_cover")), images[0] if images else None)
+                cover = next(
+                    (img for img in images if img.get("is_cover")),
+                    images[0] if images else None,
+                )
                 item_sale_status = d.get("sale_status", "available")
                 if item_sale_status == "withdrawn":
                     continue
-                bundle_items.append({
-                    "id": item.id,
-                    "name": d.get("name"),
-                    "brand": d.get("brand"),
-                    "condition": d.get("condition"),
-                    "price": d.get("actual_listing_price") or 0,
-                    "image_gcs_path": cover.get("gcs_path") if cover else None,
-                    "sale_status": item_sale_status,
-                })
+                bundle_items.append(
+                    {
+                        "id": item.id,
+                        "name": d.get("name"),
+                        "brand": d.get("brand"),
+                        "condition": d.get("condition"),
+                        "price": d.get("actual_listing_price") or 0,
+                        "image_gcs_path": cover.get("gcs_path") if cover else None,
+                        "sale_status": item_sale_status,
+                    }
+                )
             item_total = sum(i["price"] for i in bundle_items)
             stored_pct = b_data.get("bundleDiscountPercent")
-            discount = (stored_pct / 100.0) if stored_pct is not None else DEFAULT_BUNDLE_DISCOUNT
+            discount = (
+                (stored_pct / 100.0)
+                if stored_pct is not None
+                else DEFAULT_BUNDLE_DISCOUNT
+            )
             bundle_price = round(item_total * (1 - discount), 2)
-            bundles.append({
-                "id": bundle_doc.id,
-                "name": b_data.get("name"),
-                "items": bundle_items,
-                "itemTotal": item_total,
-                "bundlePrice": bundle_price,
-                "discountPct": int(discount * 100),
-            })
+            bundles.append(
+                {
+                    "id": bundle_doc.id,
+                    "name": b_data.get("name"),
+                    "items": bundle_items,
+                    "itemTotal": item_total,
+                    "bundlePrice": bundle_price,
+                    "discountPct": int(discount * 100),
+                }
+            )
 
         sale_cover = sale_data.get("coverImage") or {}
         return {

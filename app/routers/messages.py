@@ -3,7 +3,14 @@ import logging
 import time
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    WebSocket,
+    WebSocketDisconnect,
+)
 
 from app.core.deps import FirestoreDep, GCSDep, MessagingDep
 from app.models.schemas import (
@@ -48,7 +55,9 @@ async def start_conversation(
     if not other_user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    conv_id, conv_data = await messaging.start_conversation(current_user.id, body.otherUserId)
+    conv_id, conv_data = await messaging.start_conversation(
+        current_user.id, body.otherUserId
+    )
 
     if body.initialMessage:
         ctx = body.context.model_dump() if body.context else None
@@ -61,7 +70,9 @@ async def start_conversation(
 
 
 @router.get("/conversations", response_model=list[ConversationSummaryResponse])
-async def list_conversations(current_user: CurrentUser, firestore: FirestoreDep, messaging: MessagingDep):
+async def list_conversations(
+    current_user: CurrentUser, firestore: FirestoreDep, messaging: MessagingDep
+):
     convs = await messaging.list_conversations(current_user.id, firestore.users)
     return [ConversationSummaryResponse(**c) for c in convs]
 
@@ -86,7 +97,9 @@ async def get_messages(
     limit: int = Query(50, ge=1, le=100),
 ):
     try:
-        msgs = await messaging.list_messages(conv_id, current_user.id, before=before, limit=limit)
+        msgs = await messaging.list_messages(
+            conv_id, current_user.id, before=before, limit=limit
+        )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
     return MessagesListResponse(
@@ -123,7 +136,9 @@ async def mark_read(conv_id: str, current_user: CurrentUser, messaging: Messagin
 
 
 @router.post("/conversations/{conv_id}/block", response_model=dict)
-async def block_conversation(conv_id: str, current_user: CurrentUser, messaging: MessagingDep):
+async def block_conversation(
+    conv_id: str, current_user: CurrentUser, messaging: MessagingDep
+):
     try:
         await messaging.block(conv_id, current_user.id)
     except PermissionError as exc:
@@ -132,7 +147,9 @@ async def block_conversation(conv_id: str, current_user: CurrentUser, messaging:
 
 
 @router.post("/conversations/{conv_id}/unblock", response_model=dict)
-async def unblock_conversation(conv_id: str, current_user: CurrentUser, messaging: MessagingDep):
+async def unblock_conversation(
+    conv_id: str, current_user: CurrentUser, messaging: MessagingDep
+):
     try:
         await messaging.unblock(conv_id, current_user.id)
     except (PermissionError, ValueError) as exc:
@@ -168,7 +185,9 @@ async def patch_pin(
     if not body.saleEventId:
         raise HTTPException(status_code=422, detail="saleEventId required")
     if body.kind == "item" and (not body.bundleId or not body.itemId):
-        raise HTTPException(status_code=422, detail="bundleId and itemId required for kind=item")
+        raise HTTPException(
+            status_code=422, detail="bundleId and itemId required for kind=item"
+        )
     if body.kind == "bundle" and not body.bundleId:
         raise HTTPException(status_code=422, detail="bundleId required for kind=bundle")
 
@@ -178,7 +197,9 @@ async def patch_pin(
         raise HTTPException(status_code=404, detail="Sale not found")
     sale_seller = sale.get("sellerId") or sale.get("userId")
     if sale_seller not in conv.get("participants", []):
-        raise HTTPException(status_code=403, detail="Sale seller is not a conversation participant")
+        raise HTTPException(
+            status_code=403, detail="Sale seller is not a conversation participant"
+        )
 
     def _gcs_url(gcs_path: str | None) -> str | None:
         if not gcs_path or not gcs_path.startswith("gs://"):
@@ -191,22 +212,33 @@ async def patch_pin(
 
     snapshot: dict = {}
     if body.kind == "item":
-        item = await firestore.get_item_standalone(body.saleEventId, body.bundleId, body.itemId)
+        item = await firestore.get_item_standalone(
+            body.saleEventId, body.bundleId, body.itemId
+        )
         if not item:
             raise HTTPException(status_code=404, detail="Item not found")
         images = item.get("images", [])
-        cover = next((img for img in images if img.get("is_cover")), images[0] if images else None)
+        cover = next(
+            (img for img in images if img.get("is_cover")),
+            images[0] if images else None,
+        )
         snapshot = {
             "name": item.get("name"),
             "imageUrl": _gcs_url(cover.get("gcs_path") if cover else None),
-            "price": item.get("actual_listing_price") or item.get("predicted_listing_price"),
+            "price": item.get("actual_listing_price")
+            or item.get("predicted_listing_price"),
             "rrp": item.get("original_price"),
             "condition": item.get("condition"),
             "itemCount": None,
             "suburb": sale.get("suburb"),
         }
     elif body.kind == "bundle":
-        bundle_ref = firestore.db.collection("saleEvents").document(body.saleEventId).collection("bundles").document(body.bundleId)
+        bundle_ref = (
+            firestore.db.collection("saleEvents")
+            .document(body.saleEventId)
+            .collection("bundles")
+            .document(body.bundleId)
+        )
         bundle_doc = await bundle_ref.get()
         if not bundle_doc.exists:
             raise HTTPException(status_code=404, detail="Bundle not found")
@@ -218,7 +250,10 @@ async def patch_pin(
             if cover_gcs is None:
                 idata = item_snap.to_dict()
                 imgs = idata.get("images", [])
-                cover_img = next((img for img in imgs if img.get("is_cover")), imgs[0] if imgs else None)
+                cover_img = next(
+                    (img for img in imgs if img.get("is_cover")),
+                    imgs[0] if imgs else None,
+                )
                 if cover_img:
                     cover_gcs = cover_img.get("gcs_path")
         snapshot = {
@@ -239,9 +274,18 @@ async def patch_pin(
             async for i in b.reference.collection("items").stream():
                 item_count += 1
                 idata = i.to_dict()
-                total_price += idata.get("actual_listing_price") or idata.get("predicted_listing_price") or 0
+                total_price += (
+                    idata.get("actual_listing_price")
+                    or idata.get("predicted_listing_price")
+                    or 0
+                )
         snapshot = {
-            "name": sale.get("title") or (f"{sale.get('suburb')} Moving Sale" if sale.get("suburb") else "Moving Sale"),
+            "name": sale.get("title")
+            or (
+                f"{sale.get('suburb')} Moving Sale"
+                if sale.get("suburb")
+                else "Moving Sale"
+            ),
             "imageUrl": _gcs_url(sale_cover.get("gcs_path")),
             "price": total_price if total_price > 0 else None,
             "rrp": None,
@@ -261,7 +305,9 @@ async def patch_pin(
     username = user.get("username") if user else None
 
     try:
-        msg = await messaging.set_pin(conv_id, current_user.id, pin_ref, snapshot, username)
+        msg = await messaging.set_pin(
+            conv_id, current_user.id, pin_ref, snapshot, username
+        )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
     return MessageResponse(**msg)
@@ -278,7 +324,9 @@ async def send_offer(
         raise HTTPException(status_code=422, detail="Offer amount must be positive")
     try:
         msg = await messaging.send_offer(
-            conv_id, current_user.id, body.amount,
+            conv_id,
+            current_user.id,
+            body.amount,
             parent_offer_id=body.parentOfferId,
         )
     except PermissionError as exc:
@@ -288,7 +336,9 @@ async def send_offer(
     return MessageResponse(**msg)
 
 
-@router.post("/conversations/{conv_id}/offers/{offer_id}/accept", response_model=MessageResponse)
+@router.post(
+    "/conversations/{conv_id}/offers/{offer_id}/accept", response_model=MessageResponse
+)
 async def accept_offer(
     conv_id: str,
     offer_id: str,
@@ -304,7 +354,9 @@ async def accept_offer(
     return MessageResponse(**msg)
 
 
-@router.post("/conversations/{conv_id}/offers/{offer_id}/counter", response_model=MessageResponse)
+@router.post(
+    "/conversations/{conv_id}/offers/{offer_id}/counter", response_model=MessageResponse
+)
 async def counter_offer(
     conv_id: str,
     offer_id: str,
@@ -315,7 +367,9 @@ async def counter_offer(
     if body.amount <= 0:
         raise HTTPException(status_code=422, detail="Counter amount must be positive")
     try:
-        msg = await messaging.counter_offer(conv_id, offer_id, current_user.id, body.amount)
+        msg = await messaging.counter_offer(
+            conv_id, offer_id, current_user.id, body.amount
+        )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
     except ValueError as exc:
@@ -323,7 +377,10 @@ async def counter_offer(
     return MessageResponse(**msg)
 
 
-@router.post("/conversations/{conv_id}/offers/{offer_id}/withdraw", response_model=MessageResponse)
+@router.post(
+    "/conversations/{conv_id}/offers/{offer_id}/withdraw",
+    response_model=MessageResponse,
+)
 async def withdraw_offer(
     conv_id: str,
     offer_id: str,
@@ -369,8 +426,11 @@ async def get_phone(
 
 
 @router.websocket("/ws")
-async def user_ws(websocket: WebSocket, firestore: FirestoreDep, token: str = Query(...)):
+async def user_ws(
+    websocket: WebSocket, firestore: FirestoreDep, token: str = Query(...)
+):
     from app.services.auth import get_current_user as _gcv
+
     try:
         user = await _gcv(websocket, token=token, firestore=firestore)
     except Exception:

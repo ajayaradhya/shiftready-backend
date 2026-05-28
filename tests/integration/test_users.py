@@ -4,6 +4,7 @@ Integration Layer 7 — Users.
 Tests profile read, username update, account deletion, and data export
 against the Firestore emulator.
 """
+
 import pytest
 from google.cloud import firestore as fs_lib
 
@@ -12,30 +13,38 @@ from .conftest import auth, USER_A
 
 # ── Seed fixture ──────────────────────────────────────────────────────────────
 
+
 @pytest.fixture(autouse=True)
 async def seed_user(fsdb):
     """Seed a user doc for USER_A before each test."""
-    await fsdb.collection("users").document(USER_A).set({
-        "id": USER_A,
-        "email": f"{USER_A}@test.com",
-        "username": "alpha_user",
-        "usernameSetByUser": True,
-        "usernameChangedAt": None,
-        "displayName": "Alpha",
-        "bio": None,
-        "phoneE164": None,
-        "phoneShareOptIn": True,
-        "suburb": "Waterloo",
-        "state": "NSW",
-        "notifPrefs": {},
-        "sellerPrefs": {},
-        "privacyPrefs": {},
-        "createdAt": fs_lib.SERVER_TIMESTAMP,
-        "isDeleted": False,
-    })
+    await (
+        fsdb.collection("users")
+        .document(USER_A)
+        .set(
+            {
+                "id": USER_A,
+                "email": f"{USER_A}@test.com",
+                "username": "alpha_user",
+                "usernameSetByUser": True,
+                "usernameChangedAt": None,
+                "displayName": "Alpha",
+                "bio": None,
+                "phoneE164": None,
+                "phoneShareOptIn": True,
+                "suburb": "Waterloo",
+                "state": "NSW",
+                "notifPrefs": {},
+                "sellerPrefs": {},
+                "privacyPrefs": {},
+                "createdAt": fs_lib.SERVER_TIMESTAMP,
+                "isDeleted": False,
+            }
+        )
+    )
 
 
 # ── Profile read ──────────────────────────────────────────────────────────────
+
 
 async def test_get_me_returns_profile(client):
     r = await client.get("/api/v1/users/me", headers=auth(USER_A))
@@ -60,6 +69,7 @@ async def test_get_settings_returns_prefs(client):
 
 
 # ── Username ──────────────────────────────────────────────────────────────────
+
 
 async def test_check_username_available(client):
     r = await client.get(
@@ -112,6 +122,7 @@ async def test_update_username_too_short_rejected(client):
 
 # ── Profile update ────────────────────────────────────────────────────────────
 
+
 async def test_update_phone_valid(client):
     r = await client.patch(
         "/api/v1/users/me/phone",
@@ -150,6 +161,7 @@ async def test_update_location(client):
 
 # ── Account deletion ──────────────────────────────────────────────────────────
 
+
 async def test_delete_account_succeeds(client, fsdb):
     r = await client.delete("/api/v1/users/me", headers=auth(USER_A))
     assert r.status_code == 200
@@ -162,6 +174,7 @@ async def test_delete_account_succeeds(client, fsdb):
 
 # ── Data export ───────────────────────────────────────────────────────────────
 
+
 async def test_export_data_returns_profile(client):
     r = await client.get("/api/v1/users/me/export", headers=auth(USER_A))
     assert r.status_code == 200
@@ -173,6 +186,7 @@ async def test_export_data_returns_profile(client):
 
 
 # ── Auth guard ────────────────────────────────────────────────────────────────
+
 
 async def test_unauthenticated_returns_401(client):
     r = await client.get("/api/v1/users/me")

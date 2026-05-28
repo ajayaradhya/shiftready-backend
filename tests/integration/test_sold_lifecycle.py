@@ -8,8 +8,8 @@ Seeds a LIVE sale with 2 items in 1 bundle, then exercises:
   - mark sale sold (all at once) → all items SOLD
   - withdraw + relist item
 """
+
 import pytest
-from google.cloud import firestore as fs_lib
 
 from app.domain.status import BundleSaleStatus, ItemSaleStatus, SaleStatus
 from .conftest import auth, init_sale, add_bundle_with_item, USER_A
@@ -17,12 +17,18 @@ from .conftest import auth, init_sale, add_bundle_with_item, USER_A
 
 # ── Sale with 2 items fixture ─────────────────────────────────────────────────
 
+
 @pytest.fixture
 async def live_sale_two_items(client, fsdb) -> dict:
     """Create a LIVE sale with one bundle containing two items."""
     event_id = await init_sale(client, USER_A)
     bundle_id, item_a = await add_bundle_with_item(
-        client, event_id, USER_A, bundle_name="Living Room", item_name="Sofa", actual_listing_price=500.0
+        client,
+        event_id,
+        USER_A,
+        bundle_name="Living Room",
+        item_name="Sofa",
+        actual_listing_price=500.0,
     )
     r = await client.post(
         f"/api/v1/sales/{event_id}/bundles/{bundle_id}/items",
@@ -52,12 +58,20 @@ async def live_sale_two_items(client, fsdb) -> dict:
         headers=auth(USER_A),
     )
 
-    return {"event_id": event_id, "bundle_id": bundle_id, "item_a": item_a, "item_b": item_b}
+    return {
+        "event_id": event_id,
+        "bundle_id": bundle_id,
+        "item_a": item_a,
+        "item_b": item_b,
+    }
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
-async def test_mark_one_item_sold_makes_sale_partially_sold(client, live_sale_two_items):
+
+async def test_mark_one_item_sold_makes_sale_partially_sold(
+    client, live_sale_two_items
+):
     ids = live_sale_two_items
     r = await client.post(
         f"/api/v1/sales/{ids['event_id']}/bundles/{ids['bundle_id']}/items/{ids['item_a']}/mark-sold",
@@ -90,9 +104,15 @@ async def test_mark_both_items_sold_makes_sale_sold(client, live_sale_two_items,
     assert status_r.json()["status"] == SaleStatus.SOLD
 
     # Verify item sale_status persisted
-    item_doc = await fsdb.collection("saleEvents").document(ids["event_id"]) \
-        .collection("bundles").document(ids["bundle_id"]) \
-        .collection("items").document(ids["item_a"]).get()
+    item_doc = (
+        await fsdb.collection("saleEvents")
+        .document(ids["event_id"])
+        .collection("bundles")
+        .document(ids["bundle_id"])
+        .collection("items")
+        .document(ids["item_a"])
+        .get()
+    )
     assert item_doc.to_dict()["sale_status"] == ItemSaleStatus.SOLD
 
 
@@ -111,8 +131,13 @@ async def test_mark_bundle_sold_as_unit(client, live_sale_two_items, fsdb):
     )
     assert status_r.json()["status"] == SaleStatus.SOLD
 
-    bundle_doc = await fsdb.collection("saleEvents").document(ids["event_id"]) \
-        .collection("bundles").document(ids["bundle_id"]).get()
+    bundle_doc = (
+        await fsdb.collection("saleEvents")
+        .document(ids["event_id"])
+        .collection("bundles")
+        .document(ids["bundle_id"])
+        .get()
+    )
     assert bundle_doc.to_dict()["sale_status"] == BundleSaleStatus.SOLD
 
 
@@ -126,9 +151,15 @@ async def test_mark_sale_sold_marks_all(client, live_sale_two_items, fsdb):
     assert r.status_code == 200
 
     for item_id in (ids["item_a"], ids["item_b"]):
-        item_doc = await fsdb.collection("saleEvents").document(ids["event_id"]) \
-            .collection("bundles").document(ids["bundle_id"]) \
-            .collection("items").document(item_id).get()
+        item_doc = (
+            await fsdb.collection("saleEvents")
+            .document(ids["event_id"])
+            .collection("bundles")
+            .document(ids["bundle_id"])
+            .collection("items")
+            .document(item_id)
+            .get()
+        )
         assert item_doc.to_dict()["sale_status"] == ItemSaleStatus.SOLD
 
 
@@ -157,9 +188,15 @@ async def test_withdraw_item_and_relist(client, live_sale_two_items, fsdb):
     )
     assert r.status_code == 200
 
-    item_doc = await fsdb.collection("saleEvents").document(ids["event_id"]) \
-        .collection("bundles").document(ids["bundle_id"]) \
-        .collection("items").document(ids["item_a"]).get()
+    item_doc = (
+        await fsdb.collection("saleEvents")
+        .document(ids["event_id"])
+        .collection("bundles")
+        .document(ids["bundle_id"])
+        .collection("items")
+        .document(ids["item_a"])
+        .get()
+    )
     assert item_doc.to_dict()["sale_status"] == ItemSaleStatus.WITHDRAWN
 
     r = await client.post(
@@ -168,9 +205,15 @@ async def test_withdraw_item_and_relist(client, live_sale_two_items, fsdb):
     )
     assert r.status_code == 200
 
-    item_doc = await fsdb.collection("saleEvents").document(ids["event_id"]) \
-        .collection("bundles").document(ids["bundle_id"]) \
-        .collection("items").document(ids["item_a"]).get()
+    item_doc = (
+        await fsdb.collection("saleEvents")
+        .document(ids["event_id"])
+        .collection("bundles")
+        .document(ids["bundle_id"])
+        .collection("items")
+        .document(ids["item_a"])
+        .get()
+    )
     assert item_doc.to_dict()["sale_status"] == ItemSaleStatus.AVAILABLE
 
 

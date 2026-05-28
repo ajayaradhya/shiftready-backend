@@ -1,24 +1,23 @@
-
 from pydantic import BaseModel, Field
 
 
 class InventoryItem(BaseModel):
-    id: str | None = None 
+    id: str | None = None
     name: str
     brand: str
     condition: str
     confidence: float
-    
+
     # --- Year Tracking ---
     predicted_year_of_purchase: int
     actual_year_of_purchase: int | None = None
-    
+
     # --- Price Tracking ---
-    predicted_original_price: float # AI visual guess
-    actual_original_price: float | None = None # User ground truth
-    
-    predicted_listing_price: float | None = None # AI market estimate
-    actual_listing_price: float | None = None # Final live price
+    predicted_original_price: float  # AI visual guess
+    actual_original_price: float | None = None  # User ground truth
+
+    predicted_listing_price: float | None = None  # AI market estimate
+    actual_listing_price: float | None = None  # Final live price
     pricing_reasoning: str | None = None
 
     # Human-readable (e.g., "00:45")
@@ -32,6 +31,7 @@ class InventoryItem(BaseModel):
 
     # --- Media ---
     # Images are stored separately in Firestore as images[] sub-array, not part of AI schema.
+
 
 class RoomBundle(BaseModel):
     id: str | None = None

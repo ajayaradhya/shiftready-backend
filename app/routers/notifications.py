@@ -20,13 +20,17 @@ async def get_unread_count(current_user: CurrentUser, firestore: FirestoreDep) -
 
 
 @router.get("")
-async def list_notifications(current_user: CurrentUser, firestore: FirestoreDep) -> list[dict]:
+async def list_notifications(
+    current_user: CurrentUser, firestore: FirestoreDep
+) -> list[dict]:
     notifs = await firestore.notifications.list(current_user.id, limit=30)
     return [_serialize(n) for n in notifs]
 
 
 @router.post("/{notif_id}/read")
-async def mark_read(notif_id: str, current_user: CurrentUser, firestore: FirestoreDep) -> dict:
+async def mark_read(
+    notif_id: str, current_user: CurrentUser, firestore: FirestoreDep
+) -> dict:
     await firestore.notifications.mark_read(current_user.id, notif_id)
     return {"ok": True}
 

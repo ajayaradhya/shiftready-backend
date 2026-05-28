@@ -19,8 +19,6 @@ class TransactionRepo:
 
     async def list_transactions(self, event_id: str) -> list[dict]:
         docs = await (
-            self._col(event_id)
-            .order_by("createdAt", direction="DESCENDING")
-            .get()
+            self._col(event_id).order_by("createdAt", direction="DESCENDING").get()
         )
         return [{**d.to_dict(), "id": d.id} for d in docs]

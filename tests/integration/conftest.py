@@ -8,15 +8,16 @@ so FirestoreService connects to the emulator — not a real GCP project.
 External paid services (GCS signed URLs, Gemini AI) are mocked at the singleton level
 via a session-scoped fixture so every test gets safe defaults without any network calls.
 """
+
 import os
 import sys
 
 # ── Must be set before any app import so FirestoreService picks them up ──────
 os.environ["FIRESTORE_EMULATOR_HOST"] = "127.0.0.1:8089"
-os.environ["GCP_PROJECT_ID"]          = "shiftready-test"
-os.environ["GCP_UPLOAD_BUCKET"]       = "test-bucket"
-os.environ["GCP_SERVICE_ACCOUNT"]     = "test@test.iam.gserviceaccount.com"
-os.environ.pop("K_SERVICE", None)      # absence enables dev-token auth bypass
+os.environ["GCP_PROJECT_ID"] = "shiftready-test"
+os.environ["GCP_UPLOAD_BUCKET"] = "test-bucket"
+os.environ["GCP_SERVICE_ACCOUNT"] = "test@test.iam.gserviceaccount.com"
+os.environ.pop("K_SERVICE", None)  # absence enables dev-token auth bypass
 
 import pytest
 import httpx
@@ -28,6 +29,7 @@ from google.cloud import firestore as fs_lib
 # ── Windows async fix (mirrors root conftest) ─────────────────────────────────
 if sys.platform == "win32":
     import asyncio
+
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # ── Patch google.auth.default BEFORE app.services is imported ─────────────────
@@ -36,7 +38,9 @@ if sys.platform == "win32":
 # file (common in worktrees), that raises DefaultCredentialsError.
 # Starting the patcher here — before any fixture runs — intercepts the call.
 _mock_gcp_creds = MagicMock()
-_auth_patcher = patch("google.auth.default", return_value=(_mock_gcp_creds, "shiftready-test"))
+_auth_patcher = patch(
+    "google.auth.default", return_value=(_mock_gcp_creds, "shiftready-test")
+)
 _auth_patcher.start()
 
 # storage.Client validates credentials.universe_domain against "googleapis.com".
@@ -64,24 +68,29 @@ def mock_services():
 def mock_external_services():
     from app.services import gcs_utils, gemini_processor
 
-    with patch.object(gcs_utils, "generate_upload_url",
-                      return_value="https://mock-gcs/upload") as mock_upload, \
-         patch.object(gcs_utils, "generate_download_url",
-                      return_value="https://mock-gcs/video") as mock_download, \
-         patch.object(gemini_processor, "process_walkthrough",
-                      new_callable=AsyncMock) as mock_extract, \
-         patch.object(gemini_processor, "estimate_listing_prices",
-                      new_callable=AsyncMock) as mock_price:
-
+    with (
+        patch.object(
+            gcs_utils, "generate_upload_url", return_value="https://mock-gcs/upload"
+        ) as mock_upload,
+        patch.object(
+            gcs_utils, "generate_download_url", return_value="https://mock-gcs/video"
+        ) as mock_download,
+        patch.object(
+            gemini_processor, "process_walkthrough", new_callable=AsyncMock
+        ) as mock_extract,
+        patch.object(
+            gemini_processor, "estimate_listing_prices", new_callable=AsyncMock
+        ) as mock_price,
+    ):
         # Safe defaults — tests that don't care about AI output get empty results
         mock_extract.return_value = ([], {"model": "test", "status": "success"})
-        mock_price.return_value   = ([], {"model": "test", "status": "success"})
+        mock_price.return_value = ([], {"model": "test", "status": "success"})
 
         yield {
-            "gcs_upload":  mock_upload,
+            "gcs_upload": mock_upload,
             "gcs_download": mock_download,
-            "extract":     mock_extract,
-            "price":       mock_price,
+            "extract": mock_extract,
+            "price": mock_price,
         }
 
 
@@ -108,6 +117,7 @@ async def reinit_firestore():
     messaging integration tests use the same emulator-backed client.
     """
     from app.services import firestore_svc, messaging_svc
+
     firestore_svc._wire(fs_lib.AsyncClient(project="shiftready-test"))
     messaging_svc.convs = firestore_svc.conversations
     messaging_svc.notifs = firestore_svc.notifications
@@ -128,6 +138,7 @@ async def reinit_firestore():
 @pytest.fixture
 async def client():
     from app.main import app
+
     transport = ASGIWebSocketTransport(app=app)
     await transport.__aenter__()
     c = AsyncClient(transport=transport, base_url="http://test")
@@ -153,11 +164,17 @@ async def clean_db(mock_external_services):
     yield
     # 1. Reset Gemini mocks to safe defaults so tests don't bleed into each other
     mock_external_services["extract"].reset_mock(return_value=False, side_effect=False)
-    mock_external_services["extract"].return_value = ([], {"model": "test", "status": "success"})
-    mock_external_services["extract"].side_effect  = None
+    mock_external_services["extract"].return_value = (
+        [],
+        {"model": "test", "status": "success"},
+    )
+    mock_external_services["extract"].side_effect = None
     mock_external_services["price"].reset_mock(return_value=False, side_effect=False)
-    mock_external_services["price"].return_value   = ([], {"model": "test", "status": "success"})
-    mock_external_services["price"].side_effect    = None
+    mock_external_services["price"].return_value = (
+        [],
+        {"model": "test", "status": "success"},
+    )
+    mock_external_services["price"].side_effect = None
 
     # 2. Wipe all Firestore data via the emulator admin API
     async with httpx.AsyncClient() as hc:

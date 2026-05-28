@@ -15,18 +15,22 @@ class UserRepo:
     def __init__(self, db: firestore.AsyncClient):
         self.db = db
 
-    async def upsert_user(self, user_id: str, email: str, name: str | None = None) -> str:
+    async def upsert_user(
+        self, user_id: str, email: str, name: str | None = None
+    ) -> str:
         """Upsert user doc; auto-generate username if absent. Returns username."""
         user_ref = self.db.collection("users").document(user_id)
         snap = await user_ref.get()
 
         if snap.exists and snap.get("username"):
-            await user_ref.update({
-                "email": email,
-                "displayName": name,
-                "lastLogin": firestore.SERVER_TIMESTAMP,
-                "updatedAt": firestore.SERVER_TIMESTAMP,
-            })
+            await user_ref.update(
+                {
+                    "email": email,
+                    "displayName": name,
+                    "lastLogin": firestore.SERVER_TIMESTAMP,
+                    "updatedAt": firestore.SERVER_TIMESTAMP,
+                }
+            )
             return snap.get("username")
 
         username = await self._reserve_new_username(user_id)
@@ -88,10 +92,18 @@ class UserRepo:
             if isinstance(changed_at, datetime):
                 dt = changed_at
             else:
-                dt = changed_at.replace(tzinfo=timezone.utc) if changed_at.tzinfo is None else changed_at
+                dt = (
+                    changed_at.replace(tzinfo=timezone.utc)
+                    if changed_at.tzinfo is None
+                    else changed_at
+                )
             if datetime.now(timezone.utc) - dt < timedelta(days=USERNAME_COOLDOWN_DAYS):
-                remaining = USERNAME_COOLDOWN_DAYS - (datetime.now(timezone.utc) - dt).days
-                raise ValueError(f"Username can only be changed every {USERNAME_COOLDOWN_DAYS} days. {remaining} day(s) remaining.")
+                remaining = (
+                    USERNAME_COOLDOWN_DAYS - (datetime.now(timezone.utc) - dt).days
+                )
+                raise ValueError(
+                    f"Username can only be changed every {USERNAME_COOLDOWN_DAYS} days. {remaining} day(s) remaining."
+                )
 
         old_username = data.get("usernameLower")
         new_lower = new_username.lower()
@@ -109,15 +121,19 @@ class UserRepo:
             old_ref = self.db.collection("usernames").document(old_username)
             await old_ref.delete()
 
-        await user_ref.update({
-            "username": new_username,
-            "usernameLower": new_lower,
-            "usernameSetByUser": True,
-            "usernameChangedAt": firestore.SERVER_TIMESTAMP,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        })
+        await user_ref.update(
+            {
+                "username": new_username,
+                "usernameLower": new_lower,
+                "usernameSetByUser": True,
+                "usernameChangedAt": firestore.SERVER_TIMESTAMP,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            }
+        )
 
-    async def is_username_available(self, username: str, requesting_uid: str | None = None) -> bool:
+    async def is_username_available(
+        self, username: str, requesting_uid: str | None = None
+    ) -> bool:
         lower = username.lower()
         snap = await self.db.collection("usernames").document(lower).get()
         if not snap.exists:
@@ -130,13 +146,21 @@ class UserRepo:
 
     async def update_last_seen(self, user_id: str) -> None:
         try:
-            await self.db.collection("users").document(user_id).update({
-                "lastSeenAt": firestore.SERVER_TIMESTAMP,
-            })
+            await (
+                self.db.collection("users")
+                .document(user_id)
+                .update(
+                    {
+                        "lastSeenAt": firestore.SERVER_TIMESTAMP,
+                    }
+                )
+            )
         except Exception:
             pass  # non-fatal
 
-    async def update_profile_fields(self, user_id: str, display_name: str | None, bio: str | None) -> None:
+    async def update_profile_fields(
+        self, user_id: str, display_name: str | None, bio: str | None
+    ) -> None:
         updates: dict = {"updatedAt": firestore.SERVER_TIMESTAMP}
         if display_name is not None:
             updates["displayName"] = display_name
@@ -144,7 +168,9 @@ class UserRepo:
             updates["bio"] = bio
         await self.db.collection("users").document(user_id).update(updates)
 
-    async def update_location(self, user_id: str, suburb: str | None, state: str | None) -> None:
+    async def update_location(
+        self, user_id: str, suburb: str | None, state: str | None
+    ) -> None:
         updates: dict = {"updatedAt": firestore.SERVER_TIMESTAMP}
         if suburb is not None:
             updates["suburb"] = suburb
@@ -153,29 +179,55 @@ class UserRepo:
         await self.db.collection("users").document(user_id).update(updates)
 
     async def update_notif_prefs(self, user_id: str, prefs: dict) -> None:
-        await self.db.collection("users").document(user_id).update({
-            "notifPrefs": prefs,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        })
+        await (
+            self.db.collection("users")
+            .document(user_id)
+            .update(
+                {
+                    "notifPrefs": prefs,
+                    "updatedAt": firestore.SERVER_TIMESTAMP,
+                }
+            )
+        )
 
     async def update_seller_prefs(self, user_id: str, prefs: dict) -> None:
-        await self.db.collection("users").document(user_id).update({
-            "sellerPrefs": prefs,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        })
+        await (
+            self.db.collection("users")
+            .document(user_id)
+            .update(
+                {
+                    "sellerPrefs": prefs,
+                    "updatedAt": firestore.SERVER_TIMESTAMP,
+                }
+            )
+        )
 
     async def update_privacy_prefs(self, user_id: str, prefs: dict) -> None:
-        await self.db.collection("users").document(user_id).update({
-            "privacyPrefs": prefs,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        })
+        await (
+            self.db.collection("users")
+            .document(user_id)
+            .update(
+                {
+                    "privacyPrefs": prefs,
+                    "updatedAt": firestore.SERVER_TIMESTAMP,
+                }
+            )
+        )
 
-    async def update_phone(self, user_id: str, phone_e164: str, share_opt_in: bool) -> None:
-        await self.db.collection("users").document(user_id).update({
-            "phoneE164": phone_e164,
-            "phoneShareOptIn": share_opt_in,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        })
+    async def update_phone(
+        self, user_id: str, phone_e164: str, share_opt_in: bool
+    ) -> None:
+        await (
+            self.db.collection("users")
+            .document(user_id)
+            .update(
+                {
+                    "phoneE164": phone_e164,
+                    "phoneShareOptIn": share_opt_in,
+                    "updatedAt": firestore.SERVER_TIMESTAMP,
+                }
+            )
+        )
 
     async def get_phone(self, user_id: str) -> str | None:
         snap = await self.db.collection("users").document(user_id).get()
@@ -251,22 +303,28 @@ class UserRepo:
         data = snap.to_dict() or {}
         old_username_lower = data.get("usernameLower")
 
-        await user_ref.update({
-            "isDeleted": True,
-            "deletedAt": firestore.SERVER_TIMESTAMP,
-            "email": None,
-            "displayName": "Deleted user",
-            "phoneE164": None,
-            "phoneShareOptIn": False,
-            "bio": None,
-            "suburb": None,
-            "state": None,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        })
+        await user_ref.update(
+            {
+                "isDeleted": True,
+                "deletedAt": firestore.SERVER_TIMESTAMP,
+                "email": None,
+                "displayName": "Deleted user",
+                "phoneE164": None,
+                "phoneShareOptIn": False,
+                "bio": None,
+                "suburb": None,
+                "state": None,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            }
+        )
 
         if old_username_lower:
             try:
-                await self.db.collection("usernames").document(old_username_lower).delete()
+                await (
+                    self.db.collection("usernames")
+                    .document(old_username_lower)
+                    .delete()
+                )
             except Exception:
                 pass
 
@@ -287,17 +345,21 @@ class UserRepo:
         saved_sales = [{"id": d.id, **(d.to_dict() or {})} for d in sales_snaps]
         saved_items = [{"id": d.id, **(d.to_dict() or {})} for d in items_snaps]
 
-        return {"profile": profile, "saved_sales": saved_sales, "saved_items": saved_items}
+        return {
+            "profile": profile,
+            "saved_sales": saved_sales,
+            "saved_items": saved_items,
+        }
 
     async def get_saved(self, user_id: str) -> dict:
         user_ref = self.db.collection("users").document(user_id)
         sales_snaps, items_snaps = await asyncio.gather(
             user_ref.collection("savedSales")
-                .order_by("savedAt", direction=firestore.Query.DESCENDING)
-                .get(),
+            .order_by("savedAt", direction=firestore.Query.DESCENDING)
+            .get(),
             user_ref.collection("savedItems")
-                .order_by("savedAt", direction=firestore.Query.DESCENDING)
-                .get(),
+            .order_by("savedAt", direction=firestore.Query.DESCENDING)
+            .get(),
         )
 
         saved_sales = []

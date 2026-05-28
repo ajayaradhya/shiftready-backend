@@ -31,15 +31,21 @@ class ConnectionManager:
     async def notify_event(self, event_id: str, message: dict[str, Any]) -> None:
         connections = self.active_connections.get(event_id, set())
         if not connections:
-            logger.debug("No active WS connections for event %s; notification dropped.", event_id)
+            logger.debug(
+                "No active WS connections for event %s; notification dropped.", event_id
+            )
             return
 
         display_status = message.get("status") or message.get("type") or "DATA_UPDATE"
         if isinstance(display_status, Enum):
             display_status = display_status.value
 
-        logger.info("Broadcasting to %d WS client(s) for event %s: %s",
-                    len(connections), event_id, display_status)
+        logger.info(
+            "Broadcasting to %d WS client(s) for event %s: %s",
+            len(connections),
+            event_id,
+            display_status,
+        )
         for connection in connections:
             try:
                 await connection.send_json(message)
@@ -63,7 +69,9 @@ class ConnectionManager:
     async def notify_user(self, uid: str, message: dict[str, Any]) -> None:
         connections = self.user_connections.get(uid, set())
         if not connections:
-            logger.debug("No active user WS connections for uid %s; notification dropped.", uid)
+            logger.debug(
+                "No active user WS connections for uid %s; notification dropped.", uid
+            )
             return
         logger.info("Notifying uid %s via %d WS connection(s)", uid, len(connections))
         for connection in connections:

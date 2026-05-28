@@ -17,4 +17,6 @@ SYSTEM_INSTRUCTION = (
 
 
 def create_client(project_id: str) -> genai.Client:
-    return genai.Client(vertexai=True, project=project_id, location=settings.gemini_location)
+    return genai.Client(
+        vertexai=True, project=project_id, location=settings.gemini_location
+    )
