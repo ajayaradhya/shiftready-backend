@@ -23,7 +23,7 @@ from app.services.pipelines import run_capture_refinement_pipeline
 from app.services.notifier import notifier
 from app.core.idempotency import get_cached, store as idempotency_store
 from app.core.limiter import limiter
-from app.services.auth import get_current_user, validate_sale_owner, User, security
+from app.services.auth import get_current_user, validate_sale_owner, require_email_verified, User, security
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ router = APIRouter(prefix="/sales")
 @router.post("/init-capture", response_model=CaptureInitResponse)
 async def init_capture_sale(
     firestore: FirestoreDep,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_email_verified),
     _ = Depends(security),
 ):
     """
@@ -275,6 +275,7 @@ async def publish_sale(
     payload: SalePublishRequest,
     firestore: FirestoreDep,
     _: dict = Depends(validate_sale_owner),
+    __: User = Depends(require_email_verified),
 ):
     summary = await firestore.get_full_event_summary(event_id)  # Scoped
     if not summary:
@@ -773,6 +774,7 @@ async def republish_sale(
     event_id: str,
     firestore: FirestoreDep,
     sale: dict = Depends(validate_sale_owner),
+    _: User = Depends(require_email_verified),
 ):
     """Re-publish a sale that was unpublished. Must be ready_for_review."""
     if sale.get("status") not in [SaleStatus.READY_FOR_REVIEW]:
