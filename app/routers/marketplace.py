@@ -74,6 +74,7 @@ async def get_landing(
     gcs: GCSDep,
     response: Response,
     suburb: str | None = Query(None),
+    postcode: str | None = Query(None, description="4-digit AU postcode"),
     user: User | None = Depends(get_optional_user),
 ):
     """Single-call landing endpoint: newest items + cheapest + active sales via asyncio.gather."""
@@ -81,8 +82,8 @@ async def get_landing(
         response.headers["Cache-Control"] = _CDN_CACHE
 
     items_newest, items_cheapest, sales_raw = await asyncio.gather(
-        firestore.get_active_inventory(suburb=suburb, sort="newest"),
-        firestore.get_active_inventory(suburb=suburb, sort="price_asc"),
+        firestore.get_active_inventory(suburb=suburb, postcode=postcode, sort="newest"),
+        firestore.get_active_inventory(suburb=suburb, postcode=postcode, sort="price_asc"),
         firestore.list_live_sales(),
     )
 
@@ -109,6 +110,7 @@ async def search_marketplace(
     response: Response,
     q: str | None = Query(None, description="Search by item name or brand"),
     suburb: str | None = Query(None, description="Filter by Sydney suburb"),
+    postcode: str | None = Query(None, description="Filter by 4-digit AU postcode (takes precedence over suburb)"),
     category: str | None = Query(None, description="furniture|appliance|electronics|decor|other"),
     condition: str | None = Query(None, description="New|Like New|Good|Fair"),
     min_price: float | None = Query(None, description="Minimum listing price"),
@@ -124,7 +126,7 @@ async def search_marketplace(
         response.headers["Cache-Control"] = _CDN_CACHE
 
     items = await firestore.get_active_inventory(
-        suburb=suburb, query=q, category=category,
+        suburb=suburb, postcode=postcode, query=q, category=category,
         condition=condition, min_price=min_price, max_price=max_price, sort=sort,
     )
 

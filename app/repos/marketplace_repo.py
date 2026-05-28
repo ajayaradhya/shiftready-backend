@@ -11,6 +11,7 @@ class MarketplaceRepo:
     async def get_active_inventory(
         self,
         suburb: str | None = None,
+        postcode: str | None = None,
         query: str | None = None,
         category: str | None = None,
         condition: str | None = None,
@@ -21,7 +22,11 @@ class MarketplaceRepo:
         sales_query = self.db.collection("saleEvents").where(
             filter=firestore.FieldFilter("status", "in", [SaleStatus.LIVE, SaleStatus.PARTIALLY_SOLD])
         )
-        if suburb:
+        if postcode:
+            sales_query = sales_query.where(
+                filter=firestore.FieldFilter("pincode", "==", postcode)
+            )
+        elif suburb:
             sales_query = sales_query.where(
                 filter=firestore.FieldFilter("suburb", "==", suburb)
             )

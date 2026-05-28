@@ -191,6 +191,7 @@ class FirestoreService:
     async def get_active_inventory(
         self,
         suburb: str | None = None,
+        postcode: str | None = None,
         query: str | None = None,
         category: str | None = None,
         condition: str | None = None,
@@ -199,6 +200,6 @@ class FirestoreService:
         sort: str | None = None,
     ) -> list[dict]:
         return await self.marketplace.get_active_inventory(
-            suburb=suburb, query=query, category=category,
+            suburb=suburb, postcode=postcode, query=query, category=category,
             condition=condition, min_price=min_price, max_price=max_price, sort=sort,
         )
