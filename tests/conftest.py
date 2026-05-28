@@ -28,14 +28,13 @@ async def async_client():
 def mock_user():
     # Lazy import for same reason
     from app.services.auth import User
-    return User(id="test_user_123", email="tester@shiftready.test", name="Test User")
+    return User(id="test_user_123", email="tester@shiftready.test", name="Test User", email_verified=True)
 
 @pytest.fixture(autouse=True)
 def mock_services():
     """
-    Aggressively patches the SERVICE INSTANCES and CLIENT CLASSES.
-    This ensures that even if modules already imported the services,
-    the underlying network calls are intercepted.
+    Patches service instances so no real Firestore/Gemini/GCS calls happen in unit tests.
+    Tests using dependency_overrides will not be affected by these patches.
     """
     from app.services import firestore_svc, gemini_processor, gcs_utils
 
@@ -50,9 +49,12 @@ def mock_services():
          patch.object(firestore_svc, 'add_bundle', new=AsyncMock(return_value="mock_bundle_id")), \
          patch.object(firestore_svc, 'add_item_to_bundle', new=AsyncMock(return_value="mock_item_id")), \
          patch.object(firestore_svc, 'recalculate_bundle_total', new=AsyncMock()), \
-         patch.object(gemini_processor, 'client', new=MagicMock()), \
          patch.object(gemini_processor, 'process_walkthrough', new=AsyncMock()), \
+         patch.object(gemini_processor, 'process_frames', new=AsyncMock()), \
+         patch.object(gemini_processor, 'identify_single_frame', new=AsyncMock()), \
+         patch.object(gemini_processor, 'refine_captured_items', new=AsyncMock()), \
          patch.object(gemini_processor, 'estimate_listing_prices', new=AsyncMock()), \
+         patch.object(gemini_processor, 'suggest_sale_title', new=AsyncMock()), \
          patch.object(gcs_utils, 'generate_upload_url', return_value="https://mock-upload-url"):
 
         yield {
@@ -63,17 +65,19 @@ def mock_services():
 
 @pytest.fixture
 def authenticated_user(mock_user):
-    """Overrides the auth dependency to simulate a logged-in user."""
-    from app.services.auth import get_current_user
+    """Overrides auth dependencies to simulate a logged-in, email-verified user."""
+    from app.services.auth import get_current_user, require_email_verified
     from app.main import app
     app.dependency_overrides[get_current_user] = lambda: mock_user
+    app.dependency_overrides[require_email_verified] = lambda: mock_user
     yield mock_user
     app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.pop(require_email_verified, None)
 
 @pytest.fixture
 def sale_ownership_verified(mock_user):
-    """Simulates that the current user owns the requested event."""
-    from app.services.auth import validate_sale_owner
+    """Simulates that the current user owns the requested event (email-verified)."""
+    from app.services.auth import validate_sale_owner, get_current_user, require_email_verified
     from app.main import app
     mock_event = {
         "id": "mock_event_id",
@@ -83,5 +87,9 @@ def sale_ownership_verified(mock_user):
     async def mock_validate():
         return mock_event
     app.dependency_overrides[validate_sale_owner] = mock_validate
+    app.dependency_overrides[get_current_user] = lambda: mock_user
+    app.dependency_overrides[require_email_verified] = lambda: mock_user
     yield mock_event
     app.dependency_overrides.pop(validate_sale_owner, None)
+    app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.pop(require_email_verified, None)

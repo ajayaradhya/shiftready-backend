@@ -4,63 +4,42 @@ options:
   machineType: 'E2_HIGHCPU_8'
 
 steps:
-  # 1. Static Analysis (Linting)
+  # 1. Static Analysis: ruff check + format check + mypy
   - name: 'python:3.13-slim'
     id: 'lint'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
-        pip install ruff
+        pip install ruff mypy --quiet
         ruff check . --exclude scripts
+        ruff format --check . --exclude scripts
+        mypy app/ --ignore-missing-imports --no-strict-optional
 
-  # 2. Run Tests with Coverage (includes integration tests against Firestore emulator)
-  # - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
-  #   id: 'run-tests'
-  #   waitFor: ['lint']
-  #   entrypoint: 'bash'
-  #   args:
-  #     - '-c'
-  #     - |
-  #       set -e
-
-  #       # ── Java is required by the Firestore emulator ─────────────────────────
-  #       apt-get update -qq
-  #       apt-get install -y -qq --no-install-recommends default-jre-headless
-
-  #       # ── Install Firestore emulator via gcloud component ───────────────────
-  #       gcloud components install cloud-firestore-emulator --quiet
-
-  #       # ── Install Python dependencies ────────────────────────────────────────
-  #       pip3 install -r requirements.txt --quiet
-
-  #       # ── Start Firestore emulator in background ─────────────────────────────
-  #       gcloud beta emulators firestore start --host-port=127.0.0.1:8089 &
-  #       EMULATOR_PID=$$!
-
-  #       # ── Wait until the emulator REST endpoint responds (max 30 s) ──────────
-  #       echo "Waiting for Firestore emulator..."
-  #       for i in $$(seq 1 30); do
-  #         curl -sf http://127.0.0.1:8089/ >/dev/null 2>&1 && break || sleep 1
-  #       done
-  #       echo "Firestore emulator ready"
-
-  #       # ── Run tests ─────────────────────────────────────────────────────────
-  #       python3 -m pytest
-  #       EXIT_CODE=$$?
-
-  #       kill $$EMULATOR_PID 2>/dev/null || true
-  #       exit $$EXIT_CODE
+  # 2. Unit tests (mocked — no Firestore emulator)
+  # Integration tests run locally only: make test-integration
+  - name: 'python:3.13-slim'
+    id: 'run-unit-tests'
+    waitFor: ['lint']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -e
+        pip install -r requirements.txt --quiet
+        python -m pytest tests/ --ignore=tests/integration --cov=app --cov-report=term-missing -v
 
   # 3. Pull the latest image for Docker layer caching
   - name: 'gcr.io/cloud-builders/docker'
     id: 'pull-cache'
+    waitFor: ['run-unit-tests']
     entrypoint: 'bash'
     args: ['-c', 'docker pull ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE_NAME}:latest || exit 0']
 
   # 4. Build the Production Image
   - name: 'gcr.io/cloud-builders/docker'
     id: 'build-image'
+    waitFor: ['pull-cache']
     args: [
       'build',
       '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE_NAME}:$SHORT_SHA',
@@ -72,6 +51,7 @@ steps:
   # 5. Push to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
     id: 'push-image'
+    waitFor: ['build-image']
     args: ['push', '--all-tags', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE_NAME}']
 
   # 6. Scan pushed image for vulnerabilities
@@ -104,6 +84,7 @@ steps:
   # 8. Deploy to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'deploy'
+    waitFor: ['scan-image', 'deploy-indexes']
     entrypoint: 'gcloud'
     args:
       - 'run'

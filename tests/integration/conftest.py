@@ -103,9 +103,14 @@ async def reinit_firestore():
     own loop, so the gRPC channel must be created here — not at session scope
     — to avoid "Future attached to a different loop" errors.
     _wire() rebuilds every repo against the new client in one call.
+
+    Also re-binds messaging_svc.convs/notifs to the newly-wired repos so that
+    messaging integration tests use the same emulator-backed client.
     """
-    from app.services import firestore_svc
+    from app.services import firestore_svc, messaging_svc
     firestore_svc._wire(fs_lib.AsyncClient(project="shiftready-test"))
+    messaging_svc.convs = firestore_svc.conversations
+    messaging_svc.notifs = firestore_svc.notifications
     yield
 
 
