@@ -1,6 +1,7 @@
 from google.cloud import firestore
 
 from app.core.config import settings
+from app.core.timing import timed_op
 from app.domain.status import SaleStatus
 from app.repos.bundle_repo import BundleRepo
 from app.repos.conversation_repo import ConversationRepo
@@ -120,7 +121,8 @@ class FirestoreService:
         return await self.sales.update_sale_metadata(event_id, updates)
 
     async def list_all_sales(self, user_id: str) -> list[dict]:
-        return await self.sales.list_all_sales(user_id)
+        async with timed_op(f"list_all_sales:{user_id}"):
+            return await self.sales.list_all_sales(user_id)
 
     async def patch_sale(self, event_id: str, updates: dict, user_id: str) -> None:
         return await self.sales.patch_sale(event_id, updates, user_id)
@@ -132,7 +134,8 @@ class FirestoreService:
         return await self.sales.clear_cover(event_id)
 
     async def get_full_event_summary(self, event_id: str) -> dict | None:
-        return await self.sales.get_full_event_summary(event_id)
+        async with timed_op(f"get_full_event_summary:{event_id}"):
+            return await self.sales.get_full_event_summary(event_id)
 
     async def archive_sale(self, event_id: str) -> None:
         return await self.sales.archive_sale(event_id)
@@ -186,7 +189,8 @@ class FirestoreService:
 
     # --- marketplace ---
     async def list_live_sales(self) -> list[dict]:
-        return await self.marketplace.list_live_sales()
+        async with timed_op("list_live_sales"):
+            return await self.marketplace.list_live_sales()
 
     async def get_active_inventory(
         self,
@@ -199,7 +203,8 @@ class FirestoreService:
         max_price: float | None = None,
         sort: str | None = None,
     ) -> list[dict]:
-        return await self.marketplace.get_active_inventory(
-            suburb=suburb, postcode=postcode, query=query, category=category,
-            condition=condition, min_price=min_price, max_price=max_price, sort=sort,
-        )
+        async with timed_op("get_active_inventory"):
+            return await self.marketplace.get_active_inventory(
+                suburb=suburb, postcode=postcode, query=query, category=category,
+                condition=condition, min_price=min_price, max_price=max_price, sort=sort,
+            )

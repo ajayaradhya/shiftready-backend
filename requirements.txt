@@ -9,6 +9,7 @@ python-dotenv>=1.0.0
 google-genai>=1.12.0
 firebase-admin>=6.6.0
 slowapi>=0.1.9
+sentry-sdk[fastapi]>=2.0.0
 
 # Test dependencies
 pytest>=8.3.0

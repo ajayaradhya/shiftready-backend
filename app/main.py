@@ -2,8 +2,8 @@ import logging
 import time
 from contextlib import asynccontextmanager
 
+import sentry_sdk
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -16,11 +16,18 @@ from app.routers import sales, marketplace, users, messages, sold, notifications
 setup_logging()
 logger = logging.getLogger(__name__)
 
+if settings.sentry_dsn:
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        traces_sample_rate=0.2,
+        profiles_sample_rate=0.1,
+        environment="production" if settings.gcp_project_id else "development",
+    )
+    logger.info("Sentry initialized")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Pre-warm the Firestore gRPC connection so the first real request
-    # doesn't pay the ~1-2s connection setup cost.
     try:
         from app.services import firestore_svc
         await firestore_svc.db.collection("_warmup").limit(1).get()
@@ -39,14 +46,6 @@ app = FastAPI(
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 register_middleware(app)
 
@@ -67,19 +66,30 @@ async def root():
 
 @app.get("/health")
 async def health_check():
+    firestore_ok = False
+    try:
+        from app.services import firestore_svc
+        await firestore_svc.db.collection("_warmup").limit(1).get()
+        firestore_ok = True
+    except Exception:
+        pass
+
     return {
-        "status": "operational",
+        "status": "operational" if firestore_ok else "degraded",
         "version": settings.api_version,
         "timestamp": time.time(),
         "uptime_seconds": int(time.time() - _start_time),
         "service": "shiftready-backend",
+        "checks": {
+            "firestore": "ok" if firestore_ok else "error",
+        },
     }
 
 
 @app.get("/_ah/warmup")
 async def warmup():
-    """Cloud Run warmup handler — pre-initializes lazy connections."""
-    from app.services import firestore_svc  # noqa: F401 — triggers singleton init
+    """Cloud Run warmup handler."""
+    from app.services import firestore_svc  # noqa: F401
     return {"status": "warm"}
 
 

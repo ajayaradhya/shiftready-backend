@@ -121,7 +121,7 @@ steps:
       - '--max-instances'
       - '3'
       - '--update-env-vars'
-      - 'ALLOWED_ORIGINS=${_ALLOWED_ORIGINS},GCP_PROJECT_ID=$PROJECT_ID'
+      - 'ALLOWED_ORIGINS=${_ALLOWED_ORIGINS},GCP_PROJECT_ID=$PROJECT_ID,SENTRY_DSN=${_SENTRY_DSN}'
       - '--update-secrets'
       - 'GCP_UPLOAD_BUCKET=shiftready-gcp-upload-bucket:latest'
 
@@ -137,4 +137,5 @@ substitutions:
   _SERVICE_NAME: shiftready-api
   _REPOSITORY: shiftready-repo
   _IMAGE_NAME: backend-image
-  _ALLOWED_ORIGINS: '["https://shiftready-ui-12644234558.australia-southeast1.run.app"]'
+  _ALLOWED_ORIGINS: '["https://shiftready-ui-7nkqrak2ta-ts.a.run.app"]'
+  _SENTRY_DSN: ''  # Override in Cloud Build trigger once Sentry project is created

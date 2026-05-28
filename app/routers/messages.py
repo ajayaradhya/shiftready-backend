@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 from typing import Annotated
@@ -380,8 +381,11 @@ async def user_ws(websocket: WebSocket, firestore: FirestoreDep, token: str = Qu
     await firestore.users.update_last_seen(user.id)
     try:
         while True:
-            data = await websocket.receive_text()
-            if data == "ping":
-                await firestore.users.update_last_seen(user.id)
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+                if data == "ping":
+                    await firestore.users.update_last_seen(user.id)
+            except asyncio.TimeoutError:
+                await websocket.send_json({"type": "ping"})
     except WebSocketDisconnect:
         notifier.disconnect_user(user.id, websocket)

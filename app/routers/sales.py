@@ -21,6 +21,7 @@ from app.services.permissions import assert_editable
 from app.core.deps import FirestoreDep, GCSDep, BucketDep, GeminiDep
 from app.services.pipelines import run_capture_refinement_pipeline
 from app.services.notifier import notifier
+from app.core.idempotency import get_cached, store as idempotency_store
 from app.core.limiter import limiter
 from app.services.auth import get_current_user, validate_sale_owner, User, security
 
@@ -52,6 +53,7 @@ async def capture_frame(
     gcs: GCSDep,
     bucket: BucketDep,
     gemini: GeminiDep,
+    firestore: FirestoreDep,
     frame: UploadFile = File(...),
     event: dict = Depends(validate_sale_owner),
 ):
@@ -60,6 +62,12 @@ async def capture_frame(
     and return the result for the live bucket. Does NOT write to Firestore — display only.
     Path: POST /api/v1/sales/{event_id}/capture/frame
     """
+    idem_key = request.headers.get("Idempotency-Key")
+    if idem_key:
+        cached = await get_cached(firestore.db, f"frame:{idem_key}")
+        if cached:
+            return CaptureFrameResponse(**cached)
+
     data = await frame.read()
     frame_id = str(uuid.uuid4())
     blob_name = f"captures/{event_id}/{frame_id}.jpg"
@@ -78,17 +86,22 @@ async def capture_frame(
         price = 0.0
         confidence = "low"
 
-    return CaptureFrameResponse(
-        name=name,
-        brand=brand,
-        predicted_original_price=price,
-        gcs_uri=gcs_uri,
-        confidence=confidence,
-    )
+    response_data = {
+        "name": name,
+        "brand": brand,
+        "predicted_original_price": price,
+        "gcs_uri": gcs_uri,
+        "confidence": confidence,
+    }
+    if idem_key:
+        await idempotency_store(firestore.db, f"frame:{idem_key}", response_data)
+
+    return CaptureFrameResponse(**response_data)
 
 
 @router.post("/{event_id}/capture/finalize-v2", response_model=CaptureFinalizeV2Response)
 async def finalize_capture_v2(
+    request: Request,
     event_id: str,
     payload: CaptureFinalizeV2Request,
     background_tasks: BackgroundTasks,
@@ -103,12 +116,24 @@ async def finalize_capture_v2(
     """
     if not payload.items:
         raise HTTPException(status_code=400, detail="At least one item is required")
+
+    idem_key = request.headers.get("Idempotency-Key")
+    if idem_key:
+        cached = await get_cached(firestore.db, f"finalize:{idem_key}")
+        if cached:
+            return CaptureFinalizeV2Response(**cached)
+
     meta: dict = {"captureInput": [item.model_dump() for item in payload.items]}
     if payload.sale_title and payload.sale_title.strip():
         meta["title"] = payload.sale_title.strip()
     await firestore.update_sale_metadata(event_id, meta)
     background_tasks.add_task(run_capture_refinement_pipeline, event_id, payload.items, firestore, gemini)
-    return CaptureFinalizeV2Response(event_id=event_id, status="processing_started", item_count=len(payload.items))
+
+    response_data = {"event_id": event_id, "status": "processing_started", "item_count": len(payload.items)}
+    if idem_key:
+        await idempotency_store(firestore.db, f"finalize:{idem_key}", response_data)
+
+    return CaptureFinalizeV2Response(**response_data)
 
 
 @router.post("/{event_id}/suggest-title", response_model=SuggestTitleResponse)
@@ -216,9 +241,9 @@ async def get_status(event_id: str, event: dict = Depends(validate_sale_owner)):
 
 @router.websocket("/{event_id}/ws")
 async def status_websocket(
-    websocket: WebSocket, 
+    websocket: WebSocket,
     event_id: str,
-    event: dict = Depends(validate_sale_owner)
+    event: dict = Depends(validate_sale_owner),
 ):
     """
     Real-time status updates via WebSocket.
@@ -226,17 +251,17 @@ async def status_websocket(
     """
     await notifier.connect(event_id, websocket)
     try:
-        # State Sync on Connect: Use the event already fetched by validate_sale_owner
         await websocket.send_json({
             "type": "STATUS_UPDATE",
             "status": event.get("status"),
-            "message": "Connected to status stream"
+            "message": "Connected to status stream",
         })
-            
-        # Keep connection open until client disconnects
+
         while True:
-            # We can optionally listen for pings/messages from client here
-            await websocket.receive_text()
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+            except asyncio.TimeoutError:
+                await websocket.send_json({"type": "ping"})
     except WebSocketDisconnect:
         notifier.disconnect(event_id, websocket)
 

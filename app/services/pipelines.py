@@ -1,8 +1,11 @@
 import asyncio
 import logging
 import time
+import traceback
 import uuid
 from datetime import datetime, timezone
+
+from google.cloud import firestore as fs
 
 from app.domain.status import SaleStatus
 from app.services.firestore import FirestoreService
@@ -11,6 +14,22 @@ from app.models.schemas import CapturedItemInput
 from app.services.notifier import notifier
 
 logger = logging.getLogger(__name__)
+
+
+async def _write_failed_job(db, event_id: str, pipeline: str, exc: Exception, extra: dict | None = None) -> None:
+    """Write failed pipeline payload to DLQ collection for manual triage."""
+    try:
+        await db.collection("failedJobs").document(event_id).set({
+            "event_id": event_id,
+            "pipeline": pipeline,
+            "error": str(exc),
+            "traceback": traceback.format_exc(),
+            "failed_at": fs.SERVER_TIMESTAMP,
+            **(extra or {}),
+        })
+        logger.error("Pipeline DLQ written | event=%s pipeline=%s", event_id, pipeline)
+    except Exception as dlq_exc:
+        logger.error("Failed to write DLQ entry | event=%s: %s", event_id, dlq_exc)
 
 
 def _build_item_doc(item: CapturedItemInput, now: str) -> dict:
@@ -141,6 +160,7 @@ async def run_capture_refinement_pipeline(
         logger.exception(f"Capture refinement pipeline failed for event {event_id}")
         await firestore.transition_sale_status(event_id, SaleStatus.FAILED)
         await notifier.notify_event(event_id, {"status": SaleStatus.FAILED, "error": str(exc)})
+        await _write_failed_job(firestore.db, event_id, "capture_refinement", exc, {"items_count": len(items)})
 
 
 async def run_pricing_pipeline(
@@ -260,3 +280,4 @@ async def run_pricing_pipeline(
         logger.exception(f"Pricing pipeline failed for event {event_id}")
         await firestore.transition_sale_status(event_id, SaleStatus.FAILED)
         await notifier.notify_event(event_id, {"status": SaleStatus.FAILED, "error": str(exc)})
+        await _write_failed_job(firestore.db, event_id, "pricing", exc)
