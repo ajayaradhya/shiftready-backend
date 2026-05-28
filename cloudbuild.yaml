@@ -74,7 +74,23 @@ steps:
     id: 'push-image'
     args: ['push', '--all-tags', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE_NAME}']
 
-  # 6. Deploy Firestore indexes
+  # 6. Scan pushed image for vulnerabilities
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'scan-image'
+    waitFor: ['push-image']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud artifacts docker images scan \
+          ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE_NAME}:$SHORT_SHA \
+          --remote \
+          --format='value(response.scan)' > /tmp/scan_id.txt
+        gcloud artifacts docker images list-vulnerabilities $(cat /tmp/scan_id.txt) \
+          --format='table(vulnerability.effectiveSeverity,vulnerability.cvssScore,noteName,vulnerability.packageIssue[0].affectedPackage)' \
+          --occurrence-filter='severity="CRITICAL" OR severity="HIGH"' || true
+
+  # 7. Deploy Firestore indexes
   - name: 'node:20-slim'
     id: 'deploy-indexes'
     waitFor: ['push-image']
@@ -85,7 +101,7 @@ steps:
         npm install -g firebase-tools
         firebase deploy --only firestore:indexes,firestore:rules,storage --project $PROJECT_ID --non-interactive
 
-  # 7. Deploy to Cloud Run
+  # 8. Deploy to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'deploy'
     entrypoint: 'gcloud'
@@ -105,10 +121,9 @@ steps:
       - '--max-instances'
       - '3'
       - '--update-env-vars'
-      - 'ALLOWED_ORIGINS=${_ALLOWED_ORIGINS}'
-      # After secrets are created in Secret Manager, add:
-      # - '--update-secrets'
-      # - 'GCP_PROJECT_ID=gcp-project-id:latest,GCP_UPLOAD_BUCKET=gcp-upload-bucket:latest'
+      - 'ALLOWED_ORIGINS=${_ALLOWED_ORIGINS},GCP_PROJECT_ID=$PROJECT_ID'
+      - '--update-secrets'
+      - 'GCP_UPLOAD_BUCKET=shiftready-gcp-upload-bucket:latest'
 
 images:
   - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE_NAME}:$SHORT_SHA'
@@ -122,5 +137,4 @@ substitutions:
   _SERVICE_NAME: shiftready-backend
   _REPOSITORY: shiftready-repo
   _IMAGE_NAME: backend-image
-  _UPLOAD_BUCKET: shiftready-uploads
   _ALLOWED_ORIGINS: '["https://shiftready-ui-12644234558.australia-southeast1.run.app"]'

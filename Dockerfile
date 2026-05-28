@@ -1,7 +1,8 @@
 # 1. Use an official lightweight Python image
 # TODO(security): pin to digest after next stable release — run:
 #   docker pull python:3.13-slim && docker inspect python:3.13-slim --format '{{index .RepoDigests 0}}'
-FROM python:3.13-slim
+# Pinned 2026-05-28. Re-pin: docker pull python:3.13-slim && docker inspect --format '{{index .RepoDigests 0}}'
+FROM python:3.13-slim@sha256:b04b5d7233d2ad9c379e22ea8927cd1378cd15c60d4ef876c065b25ea8fb3bf3
 
 # 2. Prevent Python from writing .pyc files and enable unbuffered logging
 ENV PYTHONDONTWRITEBYTECODE=1

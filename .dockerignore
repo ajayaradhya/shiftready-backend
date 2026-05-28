@@ -1,5 +1,14 @@
 .git
 .gitignore
 __pycache__
+**/__pycache__
+**/*.pyc
 venv/
 .env
+.env.*
+tests/
+scripts/
+*.md
+.pytest_cache/
+.ruff_cache/
+*.json.bak
