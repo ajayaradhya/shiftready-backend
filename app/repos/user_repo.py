@@ -68,6 +68,19 @@ class UserRepo:
         data["id"] = snap.id
         return data
 
+    async def get_users_batch(self, user_ids: list[str]) -> dict[str, dict]:
+        if not user_ids:
+            return {}
+        refs = [self.db.collection("users").document(uid) for uid in user_ids]
+        snaps = self.db.get_all(refs)
+        result: dict[str, dict] = {}
+        async for snap in snaps:
+            if snap.exists:
+                data = snap.to_dict()
+                data["id"] = snap.id
+                result[snap.id] = data
+        return result
+
     async def get_by_username(self, username: str) -> dict | None:
         lower = username.lower()
         un_snap = await self.db.collection("usernames").document(lower).get()

@@ -58,6 +58,13 @@ class MessagingService:
 
     async def list_conversations(self, uid: str, user_repo) -> list[dict]:
         convs = await self.convs.list_user_conversations(uid)
+
+        other_uids = list({
+            next((p for p in c.get("participants", []) if p != uid), None)
+            for c in convs
+        } - {None})
+        users_map = await user_repo.get_users_batch(other_uids)
+
         result = []
         for c in convs:
             other_uid = next((p for p in c.get("participants", []) if p != uid), None)
@@ -65,7 +72,7 @@ class MessagingService:
             other_last_seen_at = None
             other_verified = False
             if other_uid:
-                other_user = await user_repo.get_user(other_uid)
+                other_user = users_map.get(other_uid)
                 if other_user:
                     other_username = other_user.get("username")
                     other_last_seen_at = _ts(other_user.get("lastSeenAt"))
