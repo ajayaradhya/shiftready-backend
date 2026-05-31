@@ -4,6 +4,7 @@ import time
 import traceback
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 from google.cloud import firestore as fs
 
@@ -299,7 +300,8 @@ async def run_pricing_pipeline(
             )
             return
 
-        priced_results, ai_metadata = [], {}
+        priced_results: list[Any] = []
+        ai_metadata: dict[str, Any] = {}
         for attempt in range(max_retries + 1):
             try:
                 priced_results, ai_metadata = await gemini.estimate_listing_prices(

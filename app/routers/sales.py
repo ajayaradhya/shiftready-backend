@@ -3,6 +3,7 @@ import logging
 import mimetypes
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import (
     APIRouter,
@@ -169,7 +170,7 @@ async def finalize_capture_v2(
         run_capture_refinement_pipeline, event_id, payload.items, firestore, gemini
     )
 
-    response_data = {
+    response_data: dict[str, Any] = {
         "event_id": event_id,
         "status": "processing_started",
         "item_count": len(payload.items),

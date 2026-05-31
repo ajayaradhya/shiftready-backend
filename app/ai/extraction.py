@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from typing import Any
+from typing import Any, cast
 
 from google import genai
 from google.genai import types
@@ -139,7 +139,7 @@ class ExtractionService:
                 temperature=0.1,
                 system_instruction=self._system_instruction,
                 response_mime_type="application/json",
-                response_schema=types.Schema(type="ARRAY", items=bundle_schema),
+                response_schema=types.Schema(type="ARRAY", items=bundle_schema),  # type: ignore[arg-type]
             ),
         )
 
@@ -154,10 +154,9 @@ class ExtractionService:
         metadata["status"] = "success"
 
         try:
-            raw_data = (
-                response.parsed
-                if response.parsed is not None
-                else json.loads(response.text)
+            raw_data: list[Any] = cast(
+                list[Any],
+                response.parsed if response.parsed is not None else json.loads(response.text),
             )
             bundles = []
             for b_data in raw_data:
@@ -199,7 +198,7 @@ class ExtractionService:
                 temperature=0.1,
                 system_instruction=self._system_instruction,
                 response_mime_type="application/json",
-                response_schema=types.Schema(type="ARRAY", items=bundle_schema),
+                response_schema=types.Schema(type="ARRAY", items=bundle_schema),  # type: ignore[arg-type]
             ),
         )
 
@@ -214,10 +213,9 @@ class ExtractionService:
         metadata["status"] = "success"
 
         try:
-            raw_data = (
-                response.parsed
-                if response.parsed is not None
-                else json.loads(response.text)
+            raw_data: list[Any] = cast(
+                list[Any],
+                response.parsed if response.parsed is not None else json.loads(response.text),
             )
             bundles = []
             for b_data in raw_data:
@@ -335,7 +333,7 @@ class ExtractionService:
         prompt = _SUGGEST_TITLE_PROMPT.format(item_names=", ".join(item_names[:20]))
         response = await asyncio.to_thread(
             self._client.models.generate_content,
-            model=self._model,
+            model=self._model_id,
             contents=prompt,
         )
         title = (response.text or "").strip().strip('"').strip("'")

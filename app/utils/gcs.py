@@ -4,7 +4,7 @@ import os
 import google.auth
 from google.auth import impersonated_credentials
 from google.oauth2 import service_account
-from google.cloud import storage
+from google.cloud import storage  # type: ignore[attr-defined]
 
 from app.core.config import settings
 

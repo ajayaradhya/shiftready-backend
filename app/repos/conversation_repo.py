@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timezone
+from typing import Any
 
 from google.cloud import firestore
 
@@ -49,7 +50,7 @@ class ConversationRepo:
         await ref.set(data)
         return conv_id, data
 
-    async def get_conversation(self, conv_id: str) -> dict | None:
+    async def get_conversation(self, conv_id: str) -> dict[str, Any] | None:
         snap = await self._conv_ref(conv_id).get()
         if not snap.exists:
             return None
@@ -306,7 +307,7 @@ class ConversationRepo:
             saves_str = f" (saves ${list_price - amount:.0f})"
 
         msg_ref = self._msg_col(conv_id).document()
-        msg_data = {
+        msg_data: dict[str, Any] = {
             "senderId": sender_uid,
             "text": f"Offered ${amount:.0f}{saves_str}",
             "createdAt": now,
@@ -384,7 +385,7 @@ class ConversationRepo:
             "status": "accepted",
             "pinTarget": offer.get("pinTarget"),
         }
-        accepted_msg_data = {
+        accepted_msg_data: dict[str, Any] = {
             "senderId": acceptor_uid,
             "text": f"Accepted offer of ${offer['amount']:.0f}",
             "createdAt": now,
