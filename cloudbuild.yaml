@@ -14,7 +14,7 @@ steps:
         pip install ruff mypy --quiet
         ruff check . --exclude scripts
         ruff format --check . --exclude scripts
-        mypy app/ --ignore-missing-imports --no-strict-optional
+        mypy app/ --ignore-missing-imports --no-strict-optional --explicit-package-bases
 
   # 2. Unit tests (mocked — no Firestore emulator)
   # Integration tests run locally only: make test-integration
@@ -120,5 +120,5 @@ substitutions:
   _SERVICE_NAME: shiftready-api
   _REPOSITORY: shiftready-repo
   _IMAGE_NAME: backend-image
-  _ALLOWED_ORIGINS: '["https://shiftready-ui-7nkqrak2ta-ts.a.run.app"]'
+  _ALLOWED_ORIGINS: '["https://shiftready-ui-7nkqrak2ta-ts.a.run.app","https://shiftready-ui-12644234558.australia-southeast1.run.app"]'
   _SENTRY_DSN: ''  # Override in Cloud Build trigger once Sentry project is created

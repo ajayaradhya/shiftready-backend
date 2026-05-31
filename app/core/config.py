@@ -9,6 +9,7 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "https://shiftready-ui-7nkqrak2ta-ts.a.run.app",
+        "https://shiftready-ui-12644234558.australia-southeast1.run.app",
     ]
     api_version: str = "1.1.0"
     allow_dev_tokens: bool = False  # Set to true in local .env only — never in prod
