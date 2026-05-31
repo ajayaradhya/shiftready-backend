@@ -449,3 +449,6 @@ async def user_ws(
                 await websocket.send_json({"type": "ping"})
     except WebSocketDisconnect:
         notifier.disconnect_user(user.id, websocket)
+    except Exception as exc:
+        logger.warning("User WS handler closed unexpectedly for %s: %s", user.id, exc)
+        notifier.disconnect_user(user.id, websocket)

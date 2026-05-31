@@ -323,6 +323,9 @@ async def status_websocket(
                 await websocket.send_json({"type": "ping"})
     except WebSocketDisconnect:
         notifier.disconnect(event_id, websocket)
+    except Exception as exc:
+        logger.warning("Sale WS handler closed unexpectedly for %s: %s", event_id, exc)
+        notifier.disconnect(event_id, websocket)
 
 
 # --- STATE TRANSITIONS ---

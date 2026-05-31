@@ -29,7 +29,7 @@ class ConnectionManager:
                 del self.active_connections[event_id]
 
     async def notify_event(self, event_id: str, message: dict[str, Any]) -> None:
-        connections = self.active_connections.get(event_id, set())
+        connections = self.active_connections.get(event_id, set()).copy()
         if not connections:
             logger.debug(
                 "No active WS connections for event %s; notification dropped.", event_id
@@ -46,11 +46,17 @@ class ConnectionManager:
             event_id,
             display_status,
         )
+        dead: set[WebSocket] = set()
         for connection in connections:
             try:
                 await connection.send_json(message)
             except Exception as exc:
                 logger.error("Failed to send WS message to client: %s", exc)
+                dead.add(connection)
+        if dead:
+            self.active_connections.get(event_id, set()).difference_update(dead)
+            if not self.active_connections.get(event_id):
+                self.active_connections.pop(event_id, None)
 
     # ── user-level WS (messaging) ─────────────────────────────────────────────
 
@@ -67,18 +73,24 @@ class ConnectionManager:
                 del self.user_connections[uid]
 
     async def notify_user(self, uid: str, message: dict[str, Any]) -> None:
-        connections = self.user_connections.get(uid, set())
+        connections = self.user_connections.get(uid, set()).copy()
         if not connections:
             logger.debug(
                 "No active user WS connections for uid %s; notification dropped.", uid
             )
             return
         logger.info("Notifying uid %s via %d WS connection(s)", uid, len(connections))
+        dead: set[WebSocket] = set()
         for connection in connections:
             try:
                 await connection.send_json(message)
             except Exception as exc:
                 logger.error("Failed to send user WS message: %s", exc)
+                dead.add(connection)
+        if dead:
+            self.user_connections.get(uid, set()).difference_update(dead)
+            if not self.user_connections.get(uid):
+                self.user_connections.pop(uid, None)
 
 
 notifier = ConnectionManager()
