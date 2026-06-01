@@ -73,6 +73,9 @@ class MarketplaceRepo:
                 if sale_status == "withdrawn":
                     continue
 
+                if item_data.get("actual_listing_price") is None:
+                    continue
+
                 if q_lower and (
                     q_lower not in item_data.get("name", "").lower()
                     and q_lower not in item_data.get("brand", "").lower()
