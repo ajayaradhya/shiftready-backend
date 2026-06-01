@@ -1,6 +1,6 @@
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from google.cloud import firestore
@@ -39,6 +39,7 @@ class NotificationRepo:
                     "link": link,
                     "readAt": None,
                     "createdAt": firestore.SERVER_TIMESTAMP,
+                    "expireAt": datetime.now(timezone.utc) + timedelta(days=90),
                 }
             )
         )
