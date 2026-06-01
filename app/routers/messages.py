@@ -34,7 +34,7 @@ from app.services.notifier import notifier
 _unread_cache: dict[str, tuple[int, float]] = {}
 _UNREAD_TTL = 20.0
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__) 
 
 router = APIRouter(prefix="/messages", tags=["Messaging"])
 
