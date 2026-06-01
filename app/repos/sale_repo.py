@@ -63,6 +63,8 @@ class SaleRepo:
         results = []
         async for d in docs:
             data = {**d.to_dict(), "id": d.id}
+            if data.get("status") == SaleStatus.PENDING_UPLOAD:
+                continue
             item_count = 0
             total_value = 0.0
             preview_paths: list[str] = []
