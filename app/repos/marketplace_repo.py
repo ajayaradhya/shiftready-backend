@@ -263,6 +263,8 @@ class MarketplaceRepo:
                         "condition": d.get("condition"),
                         "price": d.get("actual_listing_price") or 0,
                         "image_gcs_path": cover.get("gcs_path") if cover else None,
+                        "thumb_gcs_path": cover.get("thumb_gcs_path") if cover else None,
+                        "medium_gcs_path": cover.get("medium_gcs_path") if cover else None,
                         "sale_status": item_sale_status,
                     }
                 )

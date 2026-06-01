@@ -93,6 +93,12 @@ class GCSUtils:
         blob.upload_from_string(data, content_type=content_type)
         return f"gs://{bucket_name}/{blob_name}"
 
+    def download_bytes(self, bucket_name: str, blob_name: str) -> bytes:
+        """Downloads a GCS object as raw bytes."""
+        bucket = self.storage_client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+        return blob.download_as_bytes()
+
     def generate_download_url(
         self, bucket_name: str, blob_name: str, expires_in: int = 3600
     ) -> str:

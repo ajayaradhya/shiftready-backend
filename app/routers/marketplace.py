@@ -14,6 +14,7 @@ _CDN_CACHE = "public, max-age=30, s-maxage=120, stale-while-revalidate=300"
 
 def _process_item(item: dict, gcs, user) -> dict:
     image_url = None
+    thumb_url = None
     images = item.get("images") or []
     cover = next(
         (img for img in images if img.get("is_cover")), images[0] if images else None
@@ -24,6 +25,13 @@ def _process_item(item: dict, gcs, user) -> dict:
             try:
                 s = gcs_path.replace("gs://", "").split("/", 1)
                 image_url = gcs.generate_download_url(s[0], s[1])
+            except Exception:
+                pass
+        thumb_path = cover.get("thumb_gcs_path")
+        if thumb_path and thumb_path.startswith("gs://"):
+            try:
+                s = thumb_path.replace("gs://", "").split("/", 1)
+                thumb_url = gcs.generate_download_url(s[0], s[1])
             except Exception:
                 pass
     is_owner = user and item.get("sellerId") == user.id
@@ -37,6 +45,7 @@ def _process_item(item: dict, gcs, user) -> dict:
         "bundleName": item.get("bundleName"),
         "eventId": item.get("eventId"),
         "image_url": image_url,
+        "thumb_url": thumb_url,
         "metadata": {
             "year": item.get("actual_year_of_purchase") if user else None,
             "originalPrice": item.get("actual_original_price") if user else None,
@@ -173,6 +182,7 @@ async def get_public_sale(
     for bundle in sale.get("bundles", []):
         for item in bundle.get("items", []):
             gcs_path = item.pop("image_gcs_path", None)
+            thumb_gcs_path = item.pop("thumb_gcs_path", None)
             if gcs_path and gcs_path.startswith("gs://"):
                 try:
                     s = gcs_path.replace("gs://", "").split("/", 1)
@@ -181,6 +191,14 @@ async def get_public_sale(
                     item["image_url"] = None
             else:
                 item["image_url"] = None
+            if thumb_gcs_path and thumb_gcs_path.startswith("gs://"):
+                try:
+                    s = thumb_gcs_path.replace("gs://", "").split("/", 1)
+                    item["thumb_url"] = gcs.generate_download_url(s[0], s[1])
+                except Exception:
+                    item["thumb_url"] = None
+            else:
+                item["thumb_url"] = None
 
     seller_id = sale.get("sellerId")
     seller_doc, is_saved = await asyncio.gather(
@@ -226,6 +244,7 @@ async def get_item_detail(
 
     # Generate cover image signed URL
     image_url = None
+    thumb_url = None
     images = item.get("images") or []
     cover = next(
         (img for img in images if img.get("is_cover")), images[0] if images else None
@@ -236,6 +255,13 @@ async def get_item_detail(
             try:
                 s = gcs_path.replace("gs://", "").split("/", 1)
                 image_url = gcs.generate_download_url(s[0], s[1])
+            except Exception:
+                pass
+        thumb_path = cover.get("thumb_gcs_path")
+        if thumb_path and thumb_path.startswith("gs://"):
+            try:
+                s = thumb_path.replace("gs://", "").split("/", 1)
+                thumb_url = gcs.generate_download_url(s[0], s[1])
             except Exception:
                 pass
 
@@ -271,6 +297,7 @@ async def get_item_detail(
         "year": item.get("actual_year_of_purchase")
         or item.get("predicted_year_of_purchase"),
         "image_url": image_url,
+        "thumb_url": thumb_url,
         "bundle_id": bundle_id,
         "bundle_name": bundle_data.get("name"),
         "suburb": sale_data.get("suburb"),

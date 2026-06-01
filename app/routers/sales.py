@@ -53,6 +53,7 @@ from app.services.pipelines import run_capture_refinement_pipeline
 from app.services.notifier import notifier
 from app.core.idempotency import get_cached, store as idempotency_store
 from app.core.limiter import limiter
+from app.utils.image import generate_and_store_variants
 from app.services.auth import (
     get_current_user,
     validate_sale_owner,
@@ -276,6 +277,10 @@ async def get_sale_summary(
         if cover_path.startswith("gs://"):
             s = cover_path.replace("gs://", "").split("/", 1)
             cover["url"] = gcs.generate_download_url(s[0], s[1])
+        thumb_path = cover.get("thumb_gcs_path", "")
+        if thumb_path.startswith("gs://"):
+            s = thumb_path.replace("gs://", "").split("/", 1)
+            cover["thumb_url"] = gcs.generate_download_url(s[0], s[1])
 
     for bundle in summary.get("bundles", []):
         for item in bundle.get("items", []):
@@ -285,6 +290,14 @@ async def get_sale_summary(
                     if img_path and img_path.startswith("gs://"):
                         s = img_path.replace("gs://", "").split("/", 1)
                         img["url"] = gcs.generate_download_url(s[0], s[1])
+                    thumb_path = img.get("thumb_gcs_path")
+                    if thumb_path and thumb_path.startswith("gs://"):
+                        s = thumb_path.replace("gs://", "").split("/", 1)
+                        img["thumb_url"] = gcs.generate_download_url(s[0], s[1])
+                    medium_path = img.get("medium_gcs_path")
+                    if medium_path and medium_path.startswith("gs://"):
+                        s = medium_path.replace("gs://", "").split("/", 1)
+                        img["medium_url"] = gcs.generate_download_url(s[0], s[1])
 
     return summary
 
@@ -444,7 +457,10 @@ async def get_cover_upload_url(
 async def confirm_cover(
     event_id: str,
     payload: CoverConfirmRequest,
+    background_tasks: BackgroundTasks,
     firestore: FirestoreDep,
+    gcs: GCSDep,
+    bucket: BucketDep,
     sale: dict = Depends(validate_sale_owner),
 ):
     """Confirm a cover image that was PUT to GCS."""
@@ -456,6 +472,9 @@ async def confirm_cover(
     }
     await firestore.set_cover(event_id, cover_data)
     await notifier.notify_event(event_id, {"type": "COVER_UPDATED"})
+    background_tasks.add_task(
+        _store_cover_variants, gcs, firestore, bucket, event_id, cover_data,
+    )
     return {"status": "updated"}
 
 
@@ -699,6 +718,52 @@ async def remove_item(
     return {"status": "deleted"}
 
 
+# --- IMAGE VARIANT HELPERS ---
+
+
+async def _store_item_variants(
+    gcs,
+    firestore_svc,
+    bucket: str,
+    event_id: str,
+    bundle_id: str,
+    item_id: str,
+    image_id: str,
+    gcs_path: str,
+) -> None:
+    try:
+        thumb, medium = await generate_and_store_variants(gcs, bucket, gcs_path)
+        item = await firestore_svc.get_item_standalone(event_id, bundle_id, item_id)
+        if not item:
+            return
+        images = [
+            {**img, "thumb_gcs_path": thumb, "medium_gcs_path": medium}
+            if img.get("id") == image_id
+            else img
+            for img in item.get("images", [])
+        ]
+        await firestore_svc.update_item_data(event_id, bundle_id, item_id, {"images": images})
+    except Exception:
+        pass
+
+
+async def _store_cover_variants(
+    gcs,
+    firestore_svc,
+    bucket: str,
+    event_id: str,
+    cover_data: dict,
+) -> None:
+    try:
+        thumb, medium = await generate_and_store_variants(gcs, bucket, cover_data["gcs_path"])
+        await firestore_svc.set_cover(
+            event_id,
+            {**cover_data, "thumb_gcs_path": thumb, "medium_gcs_path": medium},
+        )
+    except Exception:
+        pass
+
+
 # --- ITEM IMAGE ENDPOINTS ---
 
 
@@ -741,7 +806,10 @@ async def confirm_item_images(
     bundle_id: str,
     item_id: str,
     payload: ImageConfirmRequest,
+    background_tasks: BackgroundTasks,
     firestore: FirestoreDep,
+    gcs: GCSDep,
+    bucket: BucketDep,
     _: dict = Depends(validate_sale_owner),
 ):
     now = datetime.now(timezone.utc).isoformat()
@@ -758,6 +826,10 @@ async def confirm_item_images(
             bundle_id,
             item_id,
             {"images": ArrayUnion([image_obj])},
+        )
+        background_tasks.add_task(
+            _store_item_variants,
+            gcs, firestore, bucket, event_id, bundle_id, item_id, img.image_id, img.gcs_path,
         )
     return {"status": "confirmed"}
 
