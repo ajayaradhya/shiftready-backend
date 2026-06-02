@@ -271,7 +271,10 @@ class MarketplaceRepo:
                         "sale_status": item_sale_status,
                     }
                 )
-            item_total = sum(i["price"] for i in bundle_items)
+            item_total = sum(
+                i["price"] for i in bundle_items
+                if i["sale_status"] not in ("sold", "reserved")
+            )
             stored_pct = b_data.get("bundleDiscountPercent")
             discount = (
                 (stored_pct / 100.0)
