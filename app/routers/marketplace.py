@@ -242,28 +242,35 @@ async def get_item_detail(
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    # Generate cover image signed URL
-    image_url = None
-    thumb_url = None
-    images = item.get("images") or []
-    cover = next(
-        (img for img in images if img.get("is_cover")), images[0] if images else None
-    )
-    if cover:
-        gcs_path = cover.get("gcs_path")
+    # Sign all images; preserve is_cover flag
+    raw_images = item.get("images") or []
+    signed_images: list[dict] = []
+    cover_url: str | None = None
+    cover_thumb_url: str | None = None
+
+    for img in raw_images:
+        entry: dict = {"is_cover": img.get("is_cover", False), "url": None, "thumb_url": None}
+        gcs_path = img.get("gcs_path")
         if gcs_path and gcs_path.startswith("gs://"):
             try:
                 s = gcs_path.replace("gs://", "").split("/", 1)
-                image_url = gcs.generate_download_url(s[0], s[1])
+                entry["url"] = gcs.generate_download_url(s[0], s[1])
             except Exception:
                 pass
-        thumb_path = cover.get("thumb_gcs_path")
+        thumb_path = img.get("thumb_gcs_path")
         if thumb_path and thumb_path.startswith("gs://"):
             try:
                 s = thumb_path.replace("gs://", "").split("/", 1)
-                thumb_url = gcs.generate_download_url(s[0], s[1])
+                entry["thumb_url"] = gcs.generate_download_url(s[0], s[1])
             except Exception:
                 pass
+        signed_images.append(entry)
+
+    # Derive legacy cover fields from the signed list for backward compat
+    cover_img = next((i for i in signed_images if i["is_cover"]), signed_images[0] if signed_images else None)
+    if cover_img:
+        cover_url = cover_img["url"]
+        cover_thumb_url = cover_img["thumb_url"]
 
     # Fetch bundle name, sale context, and saved status in parallel
     bundle_ref = (
@@ -296,11 +303,24 @@ async def get_item_detail(
         or item.get("predicted_original_price"),
         "year": item.get("actual_year_of_purchase")
         or item.get("predicted_year_of_purchase"),
-        "image_url": image_url,
-        "thumb_url": thumb_url,
+        # Legacy single-image fields (kept for compatibility)
+        "image_url": cover_url,
+        "thumb_url": cover_thumb_url,
+        # All signed images for gallery
+        "images": signed_images,
+        # Item availability status
+        "sale_status": item.get("sale_status", "available"),
+        # Physical / pickup details
+        "dimensions": item.get("dimensions"),
+        "material": item.get("material"),
+        "is_fragile": item.get("is_fragile") or False,
+        "disassembly_required": item.get("disassembly_required") or False,
+        # Bundle + sale context
         "bundle_id": bundle_id,
         "bundle_name": bundle_data.get("name"),
         "suburb": sale_data.get("suburb"),
+        "sale_title": sale_data.get("title"),
+        "move_out_date": sale_data.get("moveOutDate"),
         "seller_id": sale_data.get("sellerId"),
         "is_saved": is_saved,
     }
