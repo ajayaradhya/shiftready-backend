@@ -6,6 +6,7 @@ from app.models.schemas import (
     MarkBundleSoldRequest,
     MarkSaleSoldRequest,
     MarkSoldRequest,
+    SellerReserveRequest,
     StatusResponse,
     TransactionResponse,
     WithdrawRequest,
@@ -86,6 +87,34 @@ async def withdraw_item(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"status": "withdrawn"}
+
+
+@router.post(
+    "/{event_id}/bundles/{bundle_id}/items/{item_id}/seller-reserve",
+    response_model=StatusResponse,
+)
+async def seller_reserve_item(
+    event_id: str,
+    bundle_id: str,
+    item_id: str,
+    payload: SellerReserveRequest,
+    firestore: FirestoreDep,
+    current_user: User = Depends(get_current_user),
+    event: dict = Depends(validate_sale_owner),
+):
+    _assert_sale_active(event)
+    try:
+        await firestore.lifecycle.reserve_item(
+            event_id,
+            bundle_id,
+            item_id,
+            buyer_uid=None,
+            buyer_label=payload.buyer_label,
+            notes=payload.notes,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"status": "reserved"}
 
 
 @router.post(

@@ -552,6 +552,11 @@ class MarkSaleSoldRequest(BaseModel):
     notes: str | None = Field(default=None, max_length=500)
 
 
+class SellerReserveRequest(BaseModel):
+    buyer_label: str | None = Field(default=None, max_length=100)
+    notes: str | None = Field(default=None, max_length=500)
+
+
 class WithdrawRequest(BaseModel):
     notes: str | None = Field(default=None, max_length=500)
 

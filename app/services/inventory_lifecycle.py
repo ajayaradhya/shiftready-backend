@@ -31,9 +31,11 @@ class InventoryLifecycleService:
         event_id: str,
         bundle_id: str,
         item_id: str,
-        buyer_uid: str,
+        buyer_uid: str | None = None,
         conversation_id: str | None = None,
         offer_id: str | None = None,
+        buyer_label: str | None = None,
+        notes: str | None = None,
     ) -> None:
         item = await self.items.get_item_standalone(event_id, bundle_id, item_id)
         if not item:
@@ -42,6 +44,8 @@ class InventoryLifecycleService:
             raise ValueError("Item is already sold")
         if item.get("sale_status") == ItemSaleStatus.WITHDRAWN:
             raise ValueError("Item is withdrawn")
+        if item.get("sale_status") == ItemSaleStatus.RESERVED:
+            raise ValueError("Item is already reserved")
 
         now = datetime.now(timezone.utc)
         await self.items.update_item_data(
@@ -54,6 +58,7 @@ class InventoryLifecycleService:
                 "reserved_via_conversation_id": conversation_id,
                 "reserved_offer_id": offer_id,
                 "reserved_at": now,
+                "buyer_label": buyer_label,
             },
         )
         await self.transactions.add_transaction(
@@ -64,11 +69,13 @@ class InventoryLifecycleService:
                 "itemId": item_id,
                 "bundleId": bundle_id,
                 "buyerUid": buyer_uid,
+                "buyerLabel": buyer_label,
                 "conversationId": conversation_id,
                 "offerId": offer_id,
                 "amount": item.get("actual_listing_price")
                 or item.get("predicted_listing_price"),
                 "actorUid": buyer_uid,
+                "notes": notes,
             },
         )
         await self._rollup_bundle_and_sale(event_id, bundle_id)
