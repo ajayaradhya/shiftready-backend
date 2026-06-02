@@ -373,7 +373,7 @@ class SendMessageRequest(BaseModel):
 
 class PinRef(BaseModel):
     kind: Literal["item", "bundle", "sale"]
-    saleEventId: str
+    saleEventId: str | None = None
     bundleId: str | None = None
     itemId: str | None = None
 

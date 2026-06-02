@@ -591,7 +591,7 @@ async def update_item(
     firestore: FirestoreDep,
     _: dict = Depends(validate_sale_owner),
 ):
-    updates = payload.model_dump(exclude_none=True)
+    updates = payload.model_dump(exclude_unset=True)
     if not updates:
         return {"status": "updated"}
 
