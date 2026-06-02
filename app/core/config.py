@@ -1,9 +1,15 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     gcp_project_id: str = ""
     gcp_upload_bucket: str = ""
+
+    @field_validator("gcp_upload_bucket", mode="before")
+    @classmethod
+    def strip_bucket_name(cls, v: str) -> str:
+        return v.strip() if isinstance(v, str) else v
     gcp_service_account: str = ""
     allowed_origins: list[str] = [
         "http://localhost:3000",

@@ -471,6 +471,7 @@ class ConversationSummaryResponse(BaseModel):
     pinSnapshot: PinSnapshot | None = None
     activeOfferId: str | None = None
     dealStatus: str = "none"
+    agreedPrice: float | None = None
     phoneSharedByMe: bool = False
     phoneRevealAvailable: bool = False
     otherLastSeenAt: str | None = None

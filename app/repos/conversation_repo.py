@@ -287,21 +287,6 @@ class ConversationRepo:
             "createdAt": now,
             "updatedAt": now,
         }
-        await offer_ref.set(offer_data)
-
-        # If counter, mark parent countered
-        if parent_offer_id:
-            await (
-                self._offer_col(conv_id)
-                .document(parent_offer_id)
-                .update(
-                    {
-                        "status": "countered",
-                        "updatedAt": firestore.SERVER_TIMESTAMP,
-                    }
-                )
-            )
-
         saves_str = ""
         if list_price and list_price > amount:
             saves_str = f" (saves ${list_price - amount:.0f})"
@@ -324,6 +309,30 @@ class ConversationRepo:
             },
         }
         await msg_ref.set(msg_data)
+
+        # Store messageId in offer so we can update it when status changes
+        offer_data["messageId"] = msg_ref.id
+        await offer_ref.set(offer_data)
+
+        # If counter, mark parent offer + its message as countered
+        if parent_offer_id:
+            parent_offer = await self.get_offer(conv_id, parent_offer_id)
+            await (
+                self._offer_col(conv_id)
+                .document(parent_offer_id)
+                .update(
+                    {
+                        "status": "countered",
+                        "updatedAt": firestore.SERVER_TIMESTAMP,
+                    }
+                )
+            )
+            if parent_offer and parent_offer.get("messageId"):
+                await (
+                    self._msg_col(conv_id)
+                    .document(parent_offer["messageId"])
+                    .update({"offerPayload.status": "countered"})
+                )
 
         other = [p for p in conv["participants"] if p != sender_uid]
         update: dict = {
@@ -406,10 +415,19 @@ class ConversationRepo:
         }
         await deal_msg_ref.set(deal_msg_data)
 
+        # Update the original offer message's status to accepted
+        if offer.get("messageId"):
+            await (
+                self._msg_col(conv_id)
+                .document(offer["messageId"])
+                .update({"offerPayload.status": "accepted"})
+            )
+
         other = [p for p in conv["participants"] if p != acceptor_uid]
         update: dict = {
             "activeOfferId": None,
             "dealStatus": "agreed",
+            "agreedPrice": offer["amount"],
             "lastMessage": accepted_msg_data["text"][:100],
             "lastMessageAt": firestore.SERVER_TIMESTAMP,
             "updatedAt": firestore.SERVER_TIMESTAMP,

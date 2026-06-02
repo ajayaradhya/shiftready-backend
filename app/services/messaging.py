@@ -94,6 +94,7 @@ class MessagingService:
                     "pinSnapshot": c.get("pinSnapshot"),
                     "activeOfferId": c.get("activeOfferId"),
                     "dealStatus": c.get("dealStatus", "none"),
+                    "agreedPrice": c.get("agreedPrice"),
                     "phoneSharedByMe": bool(shared_by.get(uid)),
                     "phoneRevealAvailable": deal_agreed
                     and bool(shared_by.get(other_uid)),
