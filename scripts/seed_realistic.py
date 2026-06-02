@@ -26,6 +26,7 @@ from google.cloud import firestore, storage
 from app.repos.bundle_repo import BundleRepo
 from app.repos.conversation_repo import ConversationRepo
 from app.repos.item_repo import ItemRepo
+from app.repos.notification_repo import NotificationRepo
 from app.repos.sale_repo import SaleRepo
 from app.repos.transaction_repo import TransactionRepo
 from app.services.inventory_lifecycle import InventoryLifecycleService
@@ -148,11 +149,11 @@ IMAGE_MAP = {
     "desk": "https://images.unsplash.com/photo-1593642632559-0c6d3fc62b89?w=1600&q=85",
     "office_chair": "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=1600&q=85",
     "bookshelf": "https://images.unsplash.com/photo-1507842217343-583bb7270b66?w=1600&q=85",
-    "tv_unit": "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=1600&q=85",
+    "tv_unit": "https://images.unsplash.com/photo-1593784991095-a205069470b6?w=1600&q=85",
     "outdoor_table": "https://images.unsplash.com/photo-1600210492493-0946911123ea?w=1600&q=85",
     "armchair": "https://images.unsplash.com/photo-1567538096621-38d2284b23ff?w=1600&q=85",
     "sideboard": "https://images.unsplash.com/photo-1595515106969-1ce29566ff1c?w=1600&q=85",
-    "corner_sofa": "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=1600&q=85",
+    "corner_sofa": "https://images.unsplash.com/photo-1484101403633-562f891dc89a?w=1600&q=85",
 }
 
 _image_cache: dict[str, dict] = {}
@@ -1033,6 +1034,63 @@ async def seed_conversations(
     print(f"\n  Conversations: {conv1_id[:12]}... {conv2_id[:12]}... {conv3_id[:12]}...")
 
 
+# ── Phase 5: Seed notifications ───────────────────────────────────────────────
+
+async def seed_notifications(db: firestore.AsyncClient, sales: dict[str, dict]) -> None:
+    """Write representative notifications so the bell feed is non-empty in dev."""
+    print("\n── Phase 5: Notifications ──")
+    notif_repo = NotificationRepo(db)
+
+    s1 = sales["ajay_surry"]
+
+    # Emma's accepted offer → notify Ajay (seller) that deal is agreed
+    await notif_repo.create(
+        SELLER_AJAY,
+        "offer.accepted",
+        "Offer accepted — 3-Seater Velvet Sofa",
+        "@BrightMover211 accepted your $820 offer. Exchange contact details to arrange pickup.",
+        "/messages",
+    )
+
+    # Ajay (as buyer) gets a message reply from Bob
+    await notif_repo.create(
+        SELLER_AJAY,
+        "message.new",
+        "New message from @ReadyShifter482",
+        "Hi Ajay! Yes it is. Can pick up from Newtown, flexible on time.",
+        "/market/messages",
+    )
+
+    # Emma (buyer) — offer accepted notification
+    await notif_repo.create(
+        BUYER_EMMA,
+        "offer.accepted",
+        "Deal agreed — 3-Seater Velvet Sofa",
+        "Your offer of $820 was accepted by @ReadyShifter482. Check messages to arrange pickup.",
+        "/market/messages",
+    )
+
+    # Liam (buyer) — seller replied to his enquiry
+    await notif_repo.create(
+        BUYER_LIAM,
+        "message.new",
+        "New message from @GreenMover303",
+        "Hi Liam! Yes it is. Can pick up from Newtown, flexible on time.",
+        "/market/messages",
+    )
+
+    # Ajay — sale is ready for review (sale.ready)
+    await notif_repo.create(
+        SELLER_AJAY,
+        "sale.ready",
+        "Bondi sale ready for review",
+        "Your inventory has been priced and is ready to publish.",
+        f"/seller-central/inventory/{s1['event_id']}",
+    )
+
+    print("  Created 5 notifications across Ajay, Emma, Liam")
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 async def main() -> None:
@@ -1043,6 +1101,7 @@ async def main() -> None:
     sales = await seed_sales(db, gcs)
     await seed_lifecycle(db, sales)
     await seed_conversations(db, sales)
+    await seed_notifications(db, sales)
 
     print("\nSeed complete!")
     print("\nSpot-check endpoints:")
