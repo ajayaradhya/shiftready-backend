@@ -181,6 +181,13 @@ class UserRepo:
             updates["bio"] = bio
         await self.db.collection("users").document(user_id).update(updates)
 
+    async def update_avatar(self, user_id: str, gcs_path: str | None) -> None:
+        await (
+            self.db.collection("users")
+            .document(user_id)
+            .update({"avatarGcsPath": gcs_path, "updatedAt": firestore.SERVER_TIMESTAMP})
+        )
+
     async def update_location(
         self, user_id: str, suburb: str | None, state: str | None
     ) -> None:

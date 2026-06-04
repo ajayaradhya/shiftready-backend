@@ -316,9 +316,14 @@ class UserSettingsResponse(BaseModel):
     suburb: str | None = None
     state: str | None = None
     joinedAt: datetime | None = None
+    avatarUrl: str | None = None
     notifPrefs: NotifPrefs = NotifPrefs()
     sellerPrefs: SellerPrefs = SellerPrefs()
     privacyPrefs: PrivacyPrefs = PrivacyPrefs()
+
+
+class AvatarConfirmRequest(BaseModel):
+    gcs_path: str
 
 
 class ProfileUpdateRequest(BaseModel):

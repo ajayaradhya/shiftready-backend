@@ -3,8 +3,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.core.deps import FirestoreDep, GCSDep
+from app.core.deps import FirestoreDep, GCSDep, BucketDep
 from app.models.schemas import (
+    AvatarConfirmRequest,
     LocationUpdateRequest,
     NotificationsUpdateRequest,
     PhoneUpdateRequest,
@@ -112,7 +113,7 @@ async def update_phone(
 
 
 @router.get("/me/settings", response_model=UserSettingsResponse)
-async def get_my_settings(current_user: CurrentUser, firestore: FirestoreDep):
+async def get_my_settings(current_user: CurrentUser, firestore: FirestoreDep, gcs: GCSDep, bucket: BucketDep):
     user_doc = await firestore.get_user(current_user.id)
     if not user_doc:
         raise HTTPException(status_code=404, detail="User record not found")
@@ -120,6 +121,15 @@ async def get_my_settings(current_user: CurrentUser, firestore: FirestoreDep):
     raw_notif = user_doc.get("notifPrefs") or {}
     raw_seller = user_doc.get("sellerPrefs") or {}
     raw_privacy = user_doc.get("privacyPrefs") or {}
+
+    avatar_url: str | None = None
+    avatar_gcs_path: str | None = user_doc.get("avatarGcsPath")
+    if avatar_gcs_path:
+        try:
+            parts = avatar_gcs_path.replace("gs://", "").split("/", 1)
+            avatar_url = gcs.generate_download_url(parts[0], parts[1])
+        except Exception:
+            avatar_url = None
 
     return UserSettingsResponse(
         id=current_user.id,
@@ -133,6 +143,7 @@ async def get_my_settings(current_user: CurrentUser, firestore: FirestoreDep):
         suburb=user_doc.get("suburb"),
         state=user_doc.get("state"),
         joinedAt=user_doc.get("createdAt"),
+        avatarUrl=avatar_url,
         notifPrefs=NotifPrefs(
             **{k: v for k, v in raw_notif.items() if k in NotifPrefs.model_fields}
         ),
@@ -143,6 +154,36 @@ async def get_my_settings(current_user: CurrentUser, firestore: FirestoreDep):
             **{k: v for k, v in raw_privacy.items() if k in PrivacyPrefs.model_fields}
         ),
     )
+
+
+@router.post("/me/avatar/upload-url", response_model=dict)
+async def get_avatar_upload_url(
+    current_user: CurrentUser,
+    gcs: GCSDep,
+    bucket: BucketDep,
+):
+    blob_name = f"avatars/{current_user.id}.jpg"
+    upload_url = gcs.generate_image_upload_url(bucket, blob_name)
+    return {"upload_url": upload_url, "gcs_path": f"gs://{bucket}/{blob_name}"}
+
+
+@router.post("/me/avatar/confirm", response_model=StatusResponse)
+async def confirm_avatar(
+    body: AvatarConfirmRequest,
+    current_user: CurrentUser,
+    firestore: FirestoreDep,
+):
+    await firestore.update_user_avatar(current_user.id, body.gcs_path)
+    return StatusResponse(status="updated")
+
+
+@router.delete("/me/avatar", response_model=StatusResponse)
+async def remove_avatar(
+    current_user: CurrentUser,
+    firestore: FirestoreDep,
+):
+    await firestore.update_user_avatar(current_user.id, None)
+    return StatusResponse(status="updated")
 
 
 @router.patch("/me/profile", response_model=StatusResponse)

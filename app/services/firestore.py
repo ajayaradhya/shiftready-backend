@@ -70,6 +70,9 @@ class FirestoreService:
     ) -> None:
         return await self.users.update_profile_fields(user_id, display_name, bio)
 
+    async def update_user_avatar(self, user_id: str, gcs_path: str | None) -> None:
+        return await self.users.update_avatar(user_id, gcs_path)
+
     async def update_location(
         self, user_id: str, suburb: str | None, state: str | None
     ) -> None:
