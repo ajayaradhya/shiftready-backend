@@ -348,6 +348,10 @@ class PrivacyUpdateRequest(BaseModel):
     prefs: PrivacyPrefs
 
 
+class PushTokenRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=200)
+
+
 class UsernameAvailableResponse(BaseModel):
     available: bool
     username: str

@@ -7,10 +7,11 @@ logger = logging.getLogger(__name__)
 class MessagingService:
     """Thin orchestration layer over ConversationRepo + notifier."""
 
-    def __init__(self, conversation_repo, notifier, notification_repo=None):
+    def __init__(self, conversation_repo, notifier, notification_repo=None, push=None):
         self.convs = conversation_repo
         self.notifier = notifier
         self.notifs = notification_repo
+        self.push = push
 
     async def start_conversation(self, uid_a: str, uid_b: str) -> tuple[str, dict]:
         return await self.convs.get_or_create_conversation(uid_a, uid_b)
@@ -54,6 +55,8 @@ class MessagingService:
                             "notificationId": notif_id,
                         },
                     )
+                    if self.push:
+                        await self.push.notify(other_uid, "New message", preview, {"conversationId": conv_id})
         return _serialize_msg(msg)
 
     async def list_conversations(self, uid: str, user_repo) -> list[dict]:
@@ -225,6 +228,8 @@ class MessagingService:
                         "notificationId": notif_id,
                     },
                 )
+                if self.push:
+                    await self.push.notify(other_uid, "New offer received", f"${amount:.0f} offer", {"conversationId": conv_id})
         return _serialize_msg(msg)
 
     async def accept_offer(
@@ -255,7 +260,7 @@ class MessagingService:
                 notif_id = await self.notifs.create(
                     uid=uid,
                     type="offer.accepted",
-                    title="Offer accepted 🎉",
+                    title="Offer accepted",
                     body=f"Your ${amount:.0f} offer was accepted",
                     link="/messages",
                 )
@@ -266,6 +271,8 @@ class MessagingService:
                         "notificationId": notif_id,
                     },
                 )
+                if self.push:
+                    await self.push.notify(uid, "Offer accepted", f"Your ${amount:.0f} offer was accepted", {"conversationId": conv_id})
         return _serialize_msg(accepted_msg)
 
     async def counter_offer(
@@ -308,6 +315,8 @@ class MessagingService:
                         "notificationId": notif_id,
                     },
                 )
+                if self.push:
+                    await self.push.notify(other_uid, "Counter-offer received", f"${new_amount:.0f} counter-offer", {"conversationId": conv_id})
         for uid in conv.get("participants", []):
             await self.notifier.notify_user(
                 uid,

@@ -234,6 +234,38 @@ class UserRepo:
             )
         )
 
+    # --- push tokens ---
+
+    async def add_push_token(self, user_id: str, token: str) -> None:
+        await (
+            self.db.collection("users")
+            .document(user_id)
+            .update(
+                {
+                    "pushTokens": firestore.ArrayUnion([token]),
+                    "updatedAt": firestore.SERVER_TIMESTAMP,
+                }
+            )
+        )
+
+    async def remove_push_token(self, user_id: str, token: str) -> None:
+        await (
+            self.db.collection("users")
+            .document(user_id)
+            .update(
+                {
+                    "pushTokens": firestore.ArrayRemove([token]),
+                    "updatedAt": firestore.SERVER_TIMESTAMP,
+                }
+            )
+        )
+
+    async def get_push_tokens(self, user_id: str) -> list[str]:
+        snap = await self.db.collection("users").document(user_id).get()
+        if not snap.exists:
+            return []
+        return snap.get("pushTokens") or []
+
     async def update_phone(
         self, user_id: str, phone_e164: str, share_opt_in: bool
     ) -> None:

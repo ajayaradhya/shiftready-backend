@@ -60,6 +60,15 @@ class FirestoreService:
     ) -> bool:
         return await self.users.is_username_available(username, requesting_uid)
 
+    async def add_push_token(self, user_id: str, token: str) -> None:
+        return await self.users.add_push_token(user_id, token)
+
+    async def remove_push_token(self, user_id: str, token: str) -> None:
+        return await self.users.remove_push_token(user_id, token)
+
+    async def get_push_tokens(self, user_id: str) -> list[str]:
+        return await self.users.get_push_tokens(user_id)
+
     async def update_phone(
         self, user_id: str, phone_e164: str, share_opt_in: bool
     ) -> None:

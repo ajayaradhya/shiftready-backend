@@ -63,11 +63,11 @@ Firestore / GCS / Gemini
 ### Routers (`app/routers/`)
 
 - **`sales.py`** — inventory, capture (frame + finalize-v2), append, status, summary, WebSocket, publish/unpublish, bundle/item/image CRUD.
-- **`marketplace.py`** — public anonymous browse; seller PII masked.
+- **`marketplace.py`** — public anonymous browse; seller PII masked. Filters `PENDING_UPLOAD` sales and unpriced items from results.
 - **`messages.py`** — buyer-seller threads, structured offers, accept (→ reserves item).
 - **`notifications.py`** — in-app notification feed.
-- **`sold.py`** — mark sold at item/bundle/sale granularity; drives `PARTIALLY_SOLD` / `SOLD` rollup.
-- **`users.py`** — profile, username, phone.
+- **`sold.py`** — mark sold at item/bundle/sale granularity; also withdraw/relist items; drives `PARTIALLY_SOLD` / `SOLD` rollup.
+- **`users.py`** — profile, username, phone, full settings (avatar, display name, bio, location, notif prefs, seller prefs, privacy prefs), soft delete, data export, saved items.
 
 ### Services (`app/services/`)
 
@@ -87,7 +87,7 @@ Firestore / GCS / Gemini
 - **`auth.py`** — Firebase ID token validation. `dev_` prefix bypasses verification when `K_SERVICE` is absent (local only).
 - **`notifier.py`** — WebSocket `ConnectionManager` for pipeline + message events.
 - **`messaging.py`** — conversation + offer logic; structured message types (text, offer, counter, accept).
-- **`inventory_lifecycle.py`** — sold-state machine; rolls item/bundle sold flags up to sale `PARTIALLY_SOLD` / `SOLD`.
+- **`inventory_lifecycle.py`** — sold-state machine. Methods: `reserve_item`, `release_reservation`, `mark_item_sold`, `mark_bundle_sold`, `mark_sale_sold`, `withdraw_item`, `withdraw_bundle`, `withdraw_sale`, `relist_item`. Rolls item/bundle flags up to sale `PARTIALLY_SOLD` / `SOLD`.
 - **`permissions.py`** — resource-level auth helpers; `validate_sale_owner`.
 
 Global service singletons initialized in `services/__init__.py`.
@@ -152,7 +152,9 @@ saleEvents/{eventId}
   ├── bundles/{bundleId}
   │   └── items/{itemId}
   │       ├── predicted_*/actual_* price fields
-  │       ├── sale_status (AVAILABLE | RESERVED | SOLD)
+  │       ├── sale_status (AVAILABLE | RESERVED | WITHDRAWN | SOLD)
+  │       ├── reserved_for_uid, reserved_via_conversation_id, reserved_offer_id, reserved_at
+  │       ├── sold_to_uid, sold_at, final_price, sold_as (item|bundle|sale)
   │       ├── pricing_reasoning
   │       └── images[{id, gcs_path, source, is_cover, uploaded_at}]
   ├── conversations/{conversationId}    # buyer-seller threads
@@ -160,11 +162,18 @@ saleEvents/{eventId}
   └── transactions/{transactionId}      # on offer accept
 
 users/{userId}
+  ├── username, displayName, bio, phoneE164, suburb, state
+  ├── avatarGcsPath
+  ├── notifPrefs {msg, offer, counter, deal, ready, viewed, buy_msg, buy_offer, price_drop}
+  ├── sellerPrefs {paymentMethods, pickupDays, pickupTimes, minOfferPercent}
+  └── privacyPrefs {messagingFilter, profileVisible}
 notifications/{userId}/{notificationId}
 ```
 
 - `captureMode: "live" | "frames" | "batch"` — set at pipeline completion.
 - Item image `source`: `"frame_extract"` (capture) or `"user_upload"` (manual upload in cockpit).
+- Item `sale_status` values: `AVAILABLE` · `RESERVED` · `WITHDRAWN` · `SOLD`.
+- Bundle `sale_status` values: `AVAILABLE` · `RESERVED` · `PARTIALLY_SOLD` · `WITHDRAWN` · `SOLD`.
 
 ## Authentication
 
@@ -228,12 +237,18 @@ Machine `E2_HIGHCPU_8`, timeout 1200s.
 
 Full details in `../shiftready-ui/CLAUDE.md`.
 
-- Next.js 16 App Router · React 19 · TypeScript · Tailwind v4 (`@theme {}` block) · TanStack Query v5 · Radix · lucide-react · sonner · Firebase 12 · cmdk.
+**Web (`apps/web/`)** — Next.js 16 App Router · React 19 · TypeScript · Tailwind v4 · TanStack Query v5 · Radix · lucide-react · Firebase 12 · cmdk.
 - Layout groups: `(auth)` · `(sellers)` · `(market)` · `(public)`.
 - Shell: `components/shell/` — header, icon-rail sidebar, command palette, notifications panel, profile menu, bottom tab bar.
 - All API calls live in `src/lib/api.ts`. Single `apiRequest<T>` wrapper.
 - Dark-only. `pl-64` + `pt-16` is a layout invariant for authenticated shell pages.
 - Live capture: tap-first, no on-device ML. Per-tap → `POST /capture/frame` → Gemini identify. Finalize → `POST /capture/finalize-v2` with pre-analyzed items.
+- Google SSO: Google sign-in available on web auth and visible in Settings → Account → Sign-in methods.
+
+**Mobile (`apps/mobile/`)** — Expo 53 · React Native 0.79.6 · NativeWind · Expo Router · TanStack Query v5 · Firebase 12.
+- 5-tab bottom nav: Market · Saved · Messages · Sell · Profile.
+- Shares `@shiftready/api`, `@shiftready/core`, `@shiftready/types` packages with web.
+- Configured via `EXPO_PUBLIC_API_URL`.
 
 ## Additional Docs
 

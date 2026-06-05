@@ -60,6 +60,9 @@ This repository is the FastAPI service powering that pipeline. It exposes REST +
 - **Background pipelines** — async tasks with exponential retry and `FAILED` fallback for extraction, refinement, pricing, and append flows.
 - **Resource-level auth** — Firebase ID tokens with `validate_sale_owner` ownership checks; anonymous marketplace browsing with seller details masked.
 - **Signed-URL only GCS access** — raw paths never leak to the client (15-min PUT, 1-hour GET).
+- **Item lifecycle** — reserve, release, withdraw, and relist items; bundle/sale sold-status rolls up automatically.
+- **Full user settings** — avatar, display name, bio, location (suburb/state), notification prefs, seller prefs (payment methods, pickup schedule, min offer threshold), privacy prefs; soft delete + data export.
+- **Marketplace quality filters** — `PENDING_UPLOAD` sales and unpriced items are excluded from public browse and search results.
 
 ---
 
@@ -477,13 +480,37 @@ All paths are prefixed `/api/v1`. Protected endpoints require `Authorization: Be
 | `POST` | `/messages` | required | Send message (text, offer, counter) |
 | `POST` | `/messages/{id}/accept` | seller | Accept offer → reserve item, create transaction |
 
-### Sold (`/sold`)
+### Users (`/users`)
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/users/me` | required | Profile (username, usernameSetByUser) |
+| `PATCH` | `/users/me/username` | required | Set/change username |
+| `GET` | `/users/me/settings` | required | Full settings (profile, phone, location, notif/seller/privacy prefs, avatar URL) |
+| `PATCH` | `/users/me/profile` | required | Update displayName + bio |
+| `PATCH` | `/users/me/phone` | required | Update phone (E.164 AU format) |
+| `PATCH` | `/users/me/location` | required | Update suburb + state |
+| `PATCH` | `/users/me/notifications` | required | Update notification preferences |
+| `PATCH` | `/users/me/preferences` | required | Update seller preferences (payment methods, pickup schedule, min offer %) |
+| `PATCH` | `/users/me/privacy` | required | Update privacy preferences |
+| `POST` | `/users/me/avatar/upload-url` | required | Get signed PUT URL for avatar upload |
+| `POST` | `/users/me/avatar/confirm` | required | Confirm avatar after upload |
+| `DELETE` | `/users/me/avatar` | required | Remove avatar |
+| `DELETE` | `/users/me` | required | Soft-delete account |
+| `GET` | `/users/me/export` | required | Export all user data (profile, saved sales/items) |
+| `GET` | `/users/me/saved` | required | Saved sales + items with signed image URLs |
+| `GET` | `/users/username-available?u=` | optional | Check username availability |
+| `GET` | `/users/by-username/{username}` | none | Public user profile |
+
+### Sold & Lifecycle (`/sold`)
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | `POST` | `/sold/item/{event}/{bundle}/{item}` | owner | Mark item sold |
 | `POST` | `/sold/bundle/{event}/{bundle}` | owner | Mark bundle sold |
-| `POST` | `/sold/sale/{event}` | owner | Mark sale sold |
+| `POST` | `/sold/sale/{event}` | owner | Mark sale sold (full rollup) |
+| `POST` | `/sold/item/{event}/{bundle}/{item}/withdraw` | owner | Withdraw item from listing |
+| `POST` | `/sold/item/{event}/{bundle}/{item}/relist` | owner | Relist withdrawn item |
 
 Full schemas live at `/docs` (Swagger).
 

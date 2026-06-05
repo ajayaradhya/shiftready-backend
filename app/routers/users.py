@@ -13,6 +13,7 @@ from app.models.schemas import (
     PrivacyPrefs,
     PrivacyUpdateRequest,
     PublicUserResponse,
+    PushTokenRequest,
     SavedListResponse,
     NotifPrefs,
     SellerPrefs,
@@ -234,6 +235,26 @@ async def update_privacy(
 ):
     await firestore.update_privacy_prefs(current_user.id, body.prefs.model_dump())
     return StatusResponse(status="updated")
+
+
+@router.post("/me/push-token", response_model=StatusResponse)
+async def register_push_token(
+    body: PushTokenRequest,
+    current_user: CurrentUser,
+    firestore: FirestoreDep,
+):
+    await firestore.add_push_token(current_user.id, body.token)
+    return StatusResponse(status="registered")
+
+
+@router.delete("/me/push-token", response_model=StatusResponse)
+async def remove_push_token(
+    body: PushTokenRequest,
+    current_user: CurrentUser,
+    firestore: FirestoreDep,
+):
+    await firestore.remove_push_token(current_user.id, body.token)
+    return StatusResponse(status="removed")
 
 
 @router.delete("/me", response_model=StatusResponse, status_code=200)
