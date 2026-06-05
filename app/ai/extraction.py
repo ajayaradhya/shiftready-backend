@@ -48,7 +48,7 @@ Examples:
 - Obviously a monitor but brand/size unclear → confidence: "medium"
 """
 
-_SUGGEST_TITLE_PROMPT = """Generate a concise moving sale title for the ShiftReady marketplace.
+_SUGGEST_TITLE_PROMPT = """Generate a concise moving sale title for the Myrio marketplace.
 Items: {item_names}
 
 Rules:

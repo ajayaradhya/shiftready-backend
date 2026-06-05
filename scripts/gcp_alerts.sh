@@ -8,7 +8,7 @@ set -euo pipefail
 PROJECT_ID="${1:-$GCP_PROJECT_ID}"
 NOTIFY_EMAIL="${2:-}"
 REGION="australia-southeast1"
-SERVICE_URL="${3:-}"  # e.g. https://shiftready-api-xxx-ts.a.run.app
+SERVICE_URL="${3:-}"  # e.g. https://myrio-api-xxx-ts.a.run.app
 
 if [[ -z "$PROJECT_ID" ]]; then
   echo "Usage: $0 <project-id> <notification-email> [service-url]"
@@ -21,7 +21,7 @@ echo "=== GCP Alerts setup for project: $PROJECT_ID ==="
 echo "Creating budget alert..."
 gcloud billing budgets create \
   --billing-account="$(gcloud billing projects describe "$PROJECT_ID" --format='value(billingAccountName)' | sed 's|billingAccounts/||')" \
-  --display-name="ShiftReady Monthly Budget" \
+  --display-name="Myrio Monthly Budget" \
   --budget-amount=100AUD \
   --threshold-rule=percent=0.50 \
   --threshold-rule=percent=0.80 \
@@ -33,7 +33,7 @@ gcloud billing budgets create \
 if [[ -n "$NOTIFY_EMAIL" ]]; then
   echo "Creating email notification channel for $NOTIFY_EMAIL ..."
   CHANNEL_ID=$(gcloud monitoring channels create \
-    --display-name="ShiftReady Alerts" \
+    --display-name="Myrio Alerts" \
     --type=email \
     --channel-labels="email_address=$NOTIFY_EMAIL" \
     --project="$PROJECT_ID" \
@@ -46,7 +46,7 @@ if [[ -n "$SERVICE_URL" ]]; then
   echo "Creating uptime check for $SERVICE_URL ..."
   # Extract hostname
   HOST=$(echo "$SERVICE_URL" | sed 's|https://||' | sed 's|/.*||')
-  gcloud monitoring uptime create "shiftready-api-uptime" \
+  gcloud monitoring uptime create "myrio-api-uptime" \
     --resource-type=uptime-url \
     --resource-labels="host=$HOST,project_id=$PROJECT_ID" \
     --protocol=HTTPS \
@@ -60,11 +60,11 @@ fi
 echo "Creating 5xx alert policy..."
 cat > /tmp/sr_5xx_policy.json <<POLICY
 {
-  "displayName": "ShiftReady 5xx Error Rate > 1%",
+  "displayName": "Myrio 5xx Error Rate > 1%",
   "conditions": [{
     "displayName": "5xx rate",
     "conditionThreshold": {
-      "filter": "resource.type=\"cloud_run_revision\" AND resource.label.service_name=\"shiftready-api\" AND metric.type=\"run.googleapis.com/request_count\" AND metric.label.response_code_class=\"5xx\"",
+      "filter": "resource.type=\"cloud_run_revision\" AND resource.label.service_name=\"myrio-api\" AND metric.type=\"run.googleapis.com/request_count\" AND metric.label.response_code_class=\"5xx\"",
       "aggregations": [{
         "alignmentPeriod": "300s",
         "perSeriesAligner": "ALIGN_RATE",

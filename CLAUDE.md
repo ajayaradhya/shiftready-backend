@@ -4,7 +4,7 @@ Guidance for Claude Code (claude.ai/code) working in this repository.
 
 ## Project Overview
 
-**ShiftReady** automates residential relocation inventory management using Google Gemini.
+**Myrio** automates residential relocation inventory management using Google Gemini.
 
 - **Backend** (`shiftready-backend/`, this repo): FastAPI on Cloud Run (`australia-southeast1`). Firestore (Native), GCS, Firebase Auth.
 - **Frontend** (`../shiftready-ui/`): Next.js 16 / React 19. Sibling directory; launch with `--add-dir ../shiftready-ui` so both repos are editable together.
@@ -214,7 +214,7 @@ GCP_PROJECT_ID
 GCP_SERVICE_ACCOUNT
 GCP_UPLOAD_BUCKET
 GCP_REGION
-GOOGLE_APPLICATION_CREDENTIALS=./shiftready-backend-service-account.json
+GOOGLE_APPLICATION_CREDENTIALS=./myrio-backend-service-account.json
 ```
 
 `K_SERVICE` is injected by Cloud Run; its absence enables local dev auth bypass.
@@ -247,7 +247,7 @@ Full details in `../shiftready-ui/CLAUDE.md`.
 
 **Mobile (`apps/mobile/`)** — Expo 53 · React Native 0.79.6 · NativeWind · Expo Router · TanStack Query v5 · Firebase 12.
 - 5-tab bottom nav: Market · Saved · Messages · Sell · Profile.
-- Shares `@shiftready/api`, `@shiftready/core`, `@shiftready/types` packages with web.
+- Shares `@myrio/api`, `@myrio/core`, `@myrio/types` packages with web.
 - Configured via `EXPO_PUBLIC_API_URL`.
 
 ## Additional Docs

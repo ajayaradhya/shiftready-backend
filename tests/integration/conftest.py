@@ -14,7 +14,7 @@ import sys
 
 # ── Must be set before any app import so FirestoreService picks them up ──────
 os.environ["FIRESTORE_EMULATOR_HOST"] = "127.0.0.1:8089"
-os.environ["GCP_PROJECT_ID"] = "shiftready-test"
+os.environ["GCP_PROJECT_ID"] = "myrio-test"
 os.environ["GCP_UPLOAD_BUCKET"] = "test-bucket"
 os.environ["GCP_SERVICE_ACCOUNT"] = "test@test.iam.gserviceaccount.com"
 os.environ.pop("K_SERVICE", None)  # absence enables dev-token auth bypass
@@ -39,7 +39,7 @@ if sys.platform == "win32":
 # Starting the patcher here — before any fixture runs — intercepts the call.
 _mock_gcp_creds = MagicMock()
 _auth_patcher = patch(
-    "google.auth.default", return_value=(_mock_gcp_creds, "shiftready-test")
+    "google.auth.default", return_value=(_mock_gcp_creds, "myrio-test")
 )
 _auth_patcher.start()
 
@@ -118,7 +118,7 @@ async def reinit_firestore():
     """
     from app.services import firestore_svc, messaging_svc
 
-    firestore_svc._wire(fs_lib.AsyncClient(project="shiftready-test"))
+    firestore_svc._wire(fs_lib.AsyncClient(project="myrio-test"))
     messaging_svc.convs = firestore_svc.conversations
     messaging_svc.notifs = firestore_svc.notifications
     yield
@@ -152,7 +152,7 @@ async def client():
 # ─────────────────────────────────────────────────────────────────────────────
 @pytest.fixture
 async def fsdb():
-    return fs_lib.AsyncClient(project="shiftready-test")
+    return fs_lib.AsyncClient(project="myrio-test")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -179,7 +179,7 @@ async def clean_db(mock_external_services):
     # 2. Wipe all Firestore data via the emulator admin API
     async with httpx.AsyncClient() as hc:
         await hc.delete(
-            "http://127.0.0.1:8089/emulator/v1/projects/shiftready-test"
+            "http://127.0.0.1:8089/emulator/v1/projects/myrio-test"
             "/databases/(default)/documents"
         )
 

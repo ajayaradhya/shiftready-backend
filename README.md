@@ -1,6 +1,6 @@
 <div align="center">
 
-# ShiftReady Backend
+# Myrio Backend
 
 **AI-native FastAPI service for residential relocation inventory management.**
 
@@ -44,7 +44,7 @@ Live capture or video upload → Gemini vision extraction → urgency-aware pric
 
 ## Overview
 
-ShiftReady removes the friction of selling household belongings before a move. Sellers either walk through their home with a guided tap-to-capture flow or upload a single walkthrough video. The backend orchestrates Google Gemini to identify items, group them by room, estimate Sydney resale prices weighted by the seller's move-out deadline, and publish a buyer-facing marketplace listing.
+Myrio removes the friction of selling household belongings before a move. Sellers either walk through their home with a guided tap-to-capture flow or upload a single walkthrough video. The backend orchestrates Google Gemini to identify items, group them by room, estimate Sydney resale prices weighted by the seller's move-out deadline, and publish a buyer-facing marketplace listing.
 
 This repository is the FastAPI service powering that pipeline. It exposes REST + WebSocket endpoints to the [`shiftready-ui`](../shiftready-ui) Next.js frontend and coordinates Firestore, Cloud Storage, Gemini, and a separate Cloud Run Job for frame extraction.
 
@@ -642,4 +642,4 @@ Coding conventions:
 
 ## License
 
-Proprietary — ShiftReady © 2026. All rights reserved.
+Proprietary — Myrio © 2026. All rights reserved.

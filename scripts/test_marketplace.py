@@ -16,7 +16,7 @@ from app.models.schemas import SaleStatus
 from google.cloud import firestore
 
 # --- Configuration ---
-PROJECT_ID = os.getenv("GCP_PROJECT_ID", "shiftready-test-project")
+PROJECT_ID = os.getenv("GCP_PROJECT_ID", "myrio-test-project")
 EMULATOR_HOST = "127.0.0.1:8089"
 API_PORT = 8000
 API_URL = f"http://127.0.0.1:{API_PORT}/api/v1/marketplace"

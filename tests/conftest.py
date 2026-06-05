@@ -37,7 +37,7 @@ def mock_user():
 
     return User(
         id="test_user_123",
-        email="tester@shiftready.test",
+        email="tester@myrio.test",
         name="Test User",
         email_verified=True,
     )

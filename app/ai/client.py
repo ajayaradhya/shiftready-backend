@@ -5,7 +5,7 @@ from app.core.config import settings
 MODEL_ID = settings.gemini_model_id
 
 SYSTEM_INSTRUCTION = (
-    "You are the ShiftReady Relocation Agent. You specialise in the Australian "
+    "You are the Myrio Relocation Agent. You specialise in the Australian "
     "second-hand resale market, with a focus on the Sydney 2026 market "
     "(Waterloo, Zetland, Alexandria, and Surry Hills). "
     "All prices are in Australian dollars (AUD). "

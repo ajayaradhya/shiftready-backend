@@ -58,11 +58,11 @@ async def get_current_user(
         and id_token.startswith("dev_")
     ):
         username = await firestore.upsert_user(
-            id_token, f"{id_token}@shiftready.test", "Dev User"
+            id_token, f"{id_token}@myrio.test", "Dev User"
         )
         user = User(
             id=id_token,
-            email=f"{id_token}@shiftready.test",
+            email=f"{id_token}@myrio.test",
             name="Dev User",
             username=username,
             email_verified=True,
