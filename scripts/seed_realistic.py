@@ -31,7 +31,7 @@ from app.repos.sale_repo import SaleRepo
 from app.repos.transaction_repo import TransactionRepo
 from app.services.inventory_lifecycle import InventoryLifecycleService
 
-BUCKET = os.getenv("GCP_UPLOAD_BUCKET", "shiftready-uploads-bucket")
+BUCKET = os.getenv("GCP_UPLOAD_BUCKET", "myrio-uploads-bucket")
 
 # ── Users ─────────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Configure GCS lifecycle rules for ShiftReady buckets.
+# Configure GCS lifecycle rules for Myrio buckets.
 # Run once: bash scripts/gcs_lifecycle.sh
 # Requires: gcloud authed + GCP_UPLOAD_BUCKET set (or pass as arg)
 

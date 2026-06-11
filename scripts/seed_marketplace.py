@@ -15,7 +15,7 @@ load_dotenv()
 
 from google.cloud import firestore, storage
 
-BUCKET = os.getenv("GCP_UPLOAD_BUCKET", "shiftready-uploads-bucket")
+BUCKET = os.getenv("GCP_UPLOAD_BUCKET", "myrio-uploads-bucket")
 
 USER_AJAY = "IRnHCqwOkCcTagOqrilpaIpsCgB2"
 USER_BOB = "PcxF9ZV1rtP2WQUXeLp7UUYHBCS2"

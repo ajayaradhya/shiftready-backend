@@ -6,7 +6,7 @@ from .conftest import auth, USER_A
 async def test_root(client):
     r = await client.get("/")
     assert r.status_code == 200
-    assert "ShiftReady" in r.json()["message"]
+    assert "Myrio" in r.json()["message"]
 
 
 async def test_health(client):

@@ -14,8 +14,9 @@ class Settings(BaseSettings):
     allowed_origins: list[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "https://shiftready-ui-7nkqrak2ta-ts.a.run.app",
-        "https://shiftready-ui-12644234558.australia-southeast1.run.app",
+        "https://myrio.com.au",
+        "https://www.myrio.com.au",
+        "https://myrio-web-p6osvytooa-ts.a.run.app",
     ]
     api_version: str = "1.1.0"
     allow_dev_tokens: bool = False  # Set to true in local .env only — never in prod

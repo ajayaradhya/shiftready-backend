@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 load_dotenv()
 
 # Configuration
-PROJECT_ID = os.getenv("GCP_PROJECT_ID", "shiftready-test-project")
+PROJECT_ID = os.getenv("GCP_PROJECT_ID", "myrio-test-project")
 EMULATOR_HOST = "localhost:8089"
 API_PORT = 8080
 API_BASE_URL = f"http://127.0.0.1:{API_PORT}/api/v1"
@@ -270,7 +270,7 @@ def run_security_tests(event_id):
         print(f"ℹ️ Server handled malformed data with status {res.status_code}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="ShiftReady Production-Test CLI")
+    parser = argparse.ArgumentParser(description="Myrio Production-Test CLI")
     parser.add_argument("--mode", choices=["full", "extract", "correct", "estimate", "publish", "security", "marketplace"], 
                         default="full", help="Test mode (default: full)")
     parser.add_argument("--video", default="scripts/test_video.mp4", help="Path to mp4 walkthrough")

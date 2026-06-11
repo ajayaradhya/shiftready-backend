@@ -12,7 +12,7 @@ load_dotenv()
 
 from google.cloud import firestore, storage
 
-BUCKET = os.getenv("GCP_UPLOAD_BUCKET", "shiftready-uploads-bucket")
+BUCKET = os.getenv("GCP_UPLOAD_BUCKET", "myrio-uploads-bucket")
 
 # Already uploaded in previous seed - skip re-download
 PRE_UPLOADED = {

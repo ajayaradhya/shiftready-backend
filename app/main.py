@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="ShiftReady API",
+    title="Myrio API",
     description="AI-native relocation inventory and pricing engine.",
     version=settings.api_version,
     lifespan=lifespan,
@@ -62,7 +62,7 @@ _start_time = time.time()
 
 @app.get("/")
 async def root():
-    return {"message": "ShiftReady API is live", "docs": "/docs", "health": "/health"}
+    return {"message": "Myrio API is live", "docs": "/docs", "health": "/health"}
 
 
 @app.get("/health")
@@ -81,7 +81,7 @@ async def health_check():
         "version": settings.api_version,
         "timestamp": time.time(),
         "uptime_seconds": int(time.time() - _start_time),
-        "service": "shiftready-backend",
+        "service": "myrio-backend",
         "checks": {
             "firestore": "ok" if firestore_ok else "error",
         },

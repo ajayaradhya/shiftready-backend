@@ -204,7 +204,7 @@ cython_debug/
 # Claude Code
 .claude/
 .benchmarks
-shiftready-backend-service-account.json
+myrio-backend-service-account.json
 
 # Marimo
 marimo/_static/
