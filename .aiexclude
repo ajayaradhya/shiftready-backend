@@ -1,4 +1,4 @@
-# --- ShiftReady AI Exclusion File ---
+# --- Myrio AI Exclusion File ---
 
 # 1. Ignore Frontend/UI (Focusing strictly on Backend)
 ui/

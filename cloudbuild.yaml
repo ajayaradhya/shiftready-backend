@@ -1,7 +1,4 @@
 timeout: 1200s
-options:
-  logging: CLOUD_LOGGING
-  machineType: 'E2_HIGHCPU_8'
 
 steps:
   # 1. Static Analysis: ruff check + format check + mypy
@@ -97,12 +94,14 @@ steps:
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
+      - '--service-account'
+      - 'myrio-backend-sa@myrio-platform.iam.gserviceaccount.com'
       - '--min-instances'
       - '1'
       - '--max-instances'
       - '3'
       - '--update-env-vars'
-      - '^|^ALLOWED_ORIGINS=${_ALLOWED_ORIGINS}|GCP_PROJECT_ID=$PROJECT_ID|SENTRY_DSN=${_SENTRY_DSN}'
+      - '^|^ALLOWED_ORIGINS=${_ALLOWED_ORIGINS}|GCP_PROJECT_ID=$PROJECT_ID|GCP_SERVICE_ACCOUNT=myrio-backend-sa@myrio-platform.iam.gserviceaccount.com|SENTRY_DSN=${_SENTRY_DSN}'
       - '--remove-env-vars'
       - 'GCP_UPLOAD_BUCKET'
       - '--update-secrets'
@@ -114,11 +113,12 @@ images:
 
 options:
   logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
 
 substitutions:
   _REGION: australia-southeast1
   _SERVICE_NAME: myrio-api
   _REPOSITORY: myrio-repo
   _IMAGE_NAME: backend-image
-  _ALLOWED_ORIGINS: '["https://myrio.com.au","https://www.myrio.com.au"]'
+  _ALLOWED_ORIGINS: '["https://myrio.com.au","https://www.myrio.com.au","https://myrio-web-p6osvytooa-ts.a.run.app"]'
   _SENTRY_DSN: ''  # Override in Cloud Build trigger once Sentry project is created

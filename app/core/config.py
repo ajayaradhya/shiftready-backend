@@ -16,6 +16,7 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
         "https://myrio.com.au",
         "https://www.myrio.com.au",
+        "https://myrio-web-p6osvytooa-ts.a.run.app",
     ]
     api_version: str = "1.1.0"
     allow_dev_tokens: bool = False  # Set to true in local .env only — never in prod
