@@ -104,6 +104,7 @@ class MarketplaceRepo:
                     {
                         **item_data,
                         "id": item.id,
+                        "bundleId": bundle.id,
                         "bundleName": b_data.get("name"),
                         "eventId": sale.id,
                         "sellerId": sale_data.get("sellerId"),

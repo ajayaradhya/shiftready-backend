@@ -42,6 +42,7 @@ def _process_item(item: dict, gcs, user) -> dict:
         "condition": item.get("condition", "Good"),
         "category": item.get("category"),
         "price": item.get("actual_listing_price"),
+        "bundleId": item.get("bundleId"),
         "bundleName": item.get("bundleName"),
         "eventId": item.get("eventId"),
         "image_url": image_url,
