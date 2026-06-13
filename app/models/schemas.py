@@ -165,6 +165,22 @@ class ItemRepriceResponse(BaseModel):
     pricing_reasoning: str
 
 
+class BulkRepriceItemResult(BaseModel):
+    bundle_id: str
+    item_id: str
+    predicted_listing_price: float
+    actual_listing_price: float
+    pricing_reasoning: str
+    success: bool
+    error: str | None = None
+
+
+class BulkRepriceResponse(BaseModel):
+    results: list[BulkRepriceItemResult]
+    repriced: int
+    failed: int
+
+
 class ImageReorderRequest(BaseModel):
     image_ids: list[str]
 

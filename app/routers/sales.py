@@ -40,6 +40,8 @@ from app.models.schemas import (
     ItemUpdate,
     ItemMoveRequest,
     ItemRepriceResponse,
+    BulkRepriceItemResult,
+    BulkRepriceResponse,
     SalePublishRequest,
     SaleUpdate,
     SuggestTitleRequest,
@@ -671,6 +673,77 @@ async def reprice_item(
         actual_listing_price=listing_price,
         pricing_reasoning=reasoning,
     )
+
+
+@router.post(
+    "/{event_id}/items/reprice-bulk",
+    response_model=BulkRepriceResponse,
+)
+async def reprice_bulk(
+    event_id: str,
+    firestore: FirestoreDep,
+    gemini: GeminiDep,
+    _: dict = Depends(validate_sale_owner),
+):
+    import asyncio
+
+    sale = await firestore.get_full_event_summary(event_id)
+    if not sale:
+        raise HTTPException(status_code=404, detail="Sale not found")
+
+    move_out_date = sale.get("moveOutDate") or datetime.now(timezone.utc).strftime(
+        "%Y-%m-%d"
+    )
+
+    targets = [
+        (bundle["id"], item)
+        for bundle in sale.get("bundles", [])
+        for item in bundle.get("items", [])
+        if (item.get("sale_status") or "available").lower() == "available"
+    ]
+
+    if not targets:
+        return BulkRepriceResponse(results=[], repriced=0, failed=0)
+
+    async def reprice_one(bundle_id: str, item: dict) -> BulkRepriceItemResult:
+        context_item = {
+            "id": item["id"],
+            "name": item["name"],
+            "brand": item.get("brand"),
+            "condition": item.get("condition"),
+            "original_price": item.get("actual_original_price") or item.get("predicted_original_price"),
+            "purchase_year": item.get("actual_year_of_purchase") or item.get("predicted_year_of_purchase"),
+        }
+        try:
+            priced_results, _ = await gemini.estimate_listing_prices([context_item], move_out_date)
+            if not priced_results:
+                raise ValueError("No pricing result returned")
+            result = priced_results[0]
+            price = result.get("listing_price", 0)
+            reasoning = result.get("reasoning", "Market adjustment based on Sydney demand.")
+            return BulkRepriceItemResult(
+                bundle_id=bundle_id,
+                item_id=item["id"],
+                predicted_listing_price=price,
+                actual_listing_price=price,
+                pricing_reasoning=reasoning,
+                success=True,
+            )
+        except Exception as exc:
+            return BulkRepriceItemResult(
+                bundle_id=bundle_id,
+                item_id=item["id"],
+                predicted_listing_price=0,
+                actual_listing_price=0,
+                pricing_reasoning="",
+                success=False,
+                error=str(exc),
+            )
+
+    results = await asyncio.gather(*[reprice_one(bid, it) for bid, it in targets])
+    repriced = sum(1 for r in results if r.success)
+    failed = len(results) - repriced
+    return BulkRepriceResponse(results=list(results), repriced=repriced, failed=failed)
 
 
 @router.patch(
